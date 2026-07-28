@@ -1,0 +1,46 @@
+# Cloudflare Workers 配置（OpenNext adapter）
+# 部署：npm run deploy
+name = "mnemosyne"
+main = ".open-next/worker.js"
+compatibility_date = "2024-12-30"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+# 主数据 KV
+[[kv_namespaces]]
+binding = "KV"
+id = "086d793456e5425bacb04836da93ad9b"
+
+# 笔记 delta KV
+[[kv_namespaces]]
+binding = "NOTES_DELTA"
+id = "a7f66fcdd3aa4f919e270633d5612430"
+
+# 零信任 session 三件套
+[[kv_namespaces]]
+binding = "AUTH_SESSIONS"
+id = "ff753a3ce9664d93a79f2e25c36f3433"
+
+[[kv_namespaces]]
+binding = "AUTH_NONCES"
+id = "02684817b6884df4a1eb48416426cf07"
+
+[[kv_namespaces]]
+binding = "AUTH_AUDIT"
+id = "31f90bc37a644f55902e1a8b4ebce13f"
+
+# Workers AI
+[ai]
+binding = "AI"
+
+[vars]
+AI_PROVIDER = "deepseek"
+APP_URL = "https://mnemosyne.workers.dev"
+
+# 密钥通过 `wrangler secret put <NAME>` 上传：
+# - MASTER_KEY        : 32 字节 base64
+# - DEEPSEEK_API_KEY  : 平台 Trial 用（可选）
+# - GLM_API_KEY       : 平台 Trial 用（可选）

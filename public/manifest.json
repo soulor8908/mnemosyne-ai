@@ -1,0 +1,10 @@
+{
+  "name": "Mnemosyne",
+  "short_name": "Mnemosyne",
+  "description": "AI 时代的云笔记",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fafafa",
+  "theme_color": "#4f46e5",
+  "icons": []
+}

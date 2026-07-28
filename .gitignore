@@ -1,0 +1,15 @@
+node_modules/
+.next/
+.open-next/
+out/
+dist/
+.env*.local
+.env
+*.log
+.DS_Store
+.vercel
+.wrangler/
+test-results/
+playwright-report/
+coverage/
+*.zip
