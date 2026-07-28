@@ -82,7 +82,7 @@ export async function updateNote(
 
 export async function deleteNote(id: string): Promise<void> {
   const db = getDb();
-  await db.transaction('rw', db.notes, db.bilinks, db.reviewCards, db.snapshots, db.embeddings, db.attachments, async () => {
+  await db.transaction('rw', [db.notes, db.bilinks, db.reviewCards, db.snapshots, db.embeddings, db.attachments], async () => {
     await db.notes.delete(id);
     await db.bilinks.where('srcNoteId').equals(id).or('dstNoteId').equals(id).delete();
     await db.reviewCards.where('noteId').equals(id).delete();
@@ -191,7 +191,7 @@ export async function getNotesByIds(ids: string[]): Promise<Note[]> {
 export async function bulkDeleteNotes(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   const db = getDb();
-  await db.transaction('rw', db.notes, db.bilinks, db.reviewCards, db.snapshots, db.embeddings, db.attachments, async () => {
+  await db.transaction('rw', [db.notes, db.bilinks, db.reviewCards, db.snapshots, db.embeddings, db.attachments], async () => {
     await db.notes.bulkDelete(ids);
     for (const id of ids) {
       await db.bilinks.where('srcNoteId').equals(id).or('dstNoteId').equals(id).delete();

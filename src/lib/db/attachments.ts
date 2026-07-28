@@ -52,9 +52,15 @@ export async function deleteAttachment(id: string): Promise<void> {
   await db.attachments.delete(id);
 }
 
+// attachment 协议正则：匹配 markdown 中 attachment://ID 的引用
+// 支持 ![alt](attachment://ID) 和 [text](attachment://ID)
+export const ATTACHMENT_URL_RE = /attachment:\/\/([a-zA-Z0-9_-]+)/g;
+
 // 在笔记内容中插入附件引用（返回新内容）
-// 图片用 ![](blob:url) 语法，文件用 [文件名](blob:url)
-export function insertAttachmentRef(content: string, att: Attachment, url: string): string {
+// 使用 attachment://ID 协议持久化（blob URL 跨会话会失效）
+// 图片用 ![](attachment://ID) 语法，文件用 [文件名](attachment://ID)
+export function insertAttachmentRef(content: string, att: Attachment): string {
+  const url = `attachment://${att.id}`;
   const ref = att.isImage
     ? `![${att.filename}](${url})`
     : `[📎 ${att.filename}](${url})`;
@@ -62,4 +68,31 @@ export function insertAttachmentRef(content: string, att: Attachment, url: strin
   if (!content) return ref;
   if (content.endsWith('\n')) return content + ref;
   return content + '\n' + ref;
+}
+
+// 将内容中的 attachment://ID 替换为实际的 blob URL（用于展示）
+// attachmentsById: id -> Attachment 的映射
+export function resolveAttachmentUrls(
+  content: string,
+  attachmentsById: Map<string, Attachment>,
+  urlCache: Map<string, string> // id -> blob URL（避免重复创建）
+): string {
+  return content.replace(ATTACHMENT_URL_RE, (full, id: string) => {
+    let url = urlCache.get(id);
+    if (!url) {
+      const att = attachmentsById.get(id);
+      if (!att) return full; // 附件未找到，保留原引用
+      url = URL.createObjectURL(att.blob);
+      urlCache.set(id, url);
+    }
+    return url;
+  });
+}
+
+// 撤销所有缓存的 blob URL（组件卸载时调用）
+export function revokeUrlCache(urlCache: Map<string, string>): void {
+  for (const url of urlCache.values()) {
+    URL.revokeObjectURL(url);
+  }
+  urlCache.clear();
 }
