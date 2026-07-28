@@ -39,6 +39,78 @@ export function generateMasterKey(): string {
   return bytesToBase64(bytes);
 }
 
+// ─── BIP39 助记词（12 词，对人类友好） ───
+// 16 字节熵 → 12 词助记词；从助记词派生 32 字节 master key
+import BIP39_WORDLIST from './bip39-en.json';
+
+const BIP39_STRENGTH_BYTES = 16; // 128 bit → 12 词
+
+// 生成 12 词助记词（async，因 Web Crypto subtle.digest 是 async）
+export async function generateMnemonicAsync(): Promise<string> {
+  const entropy = new Uint8Array(BIP39_STRENGTH_BYTES);
+  globalThis.crypto.getRandomValues(entropy);
+
+  const hashBuf = await globalThis.crypto.subtle.digest('SHA-256', toBufferSource(entropy));
+  const hash = new Uint8Array(hashBuf);
+
+  const entropyBits = entropy.length * 8;
+  const checksumBits = entropyBits / 32;
+  const totalBits = entropyBits + checksumBits;
+
+  // entropy + 校验位首字节
+  const combined = new Uint8Array(entropy.length + 1);
+  combined.set(entropy, 0);
+  combined[entropy.length] = hash[0];
+
+  const words: string[] = [];
+  for (let i = 0; i < totalBits; i += 11) {
+    let idx = 0;
+    for (let j = 0; j < 11; j++) {
+      const bitPos = i + j;
+      const bytePos = Math.floor(bitPos / 8);
+      const bitInByte = 7 - (bitPos % 8);
+      const bit = (combined[bytePos] >> bitInByte) & 1;
+      idx = (idx << 1) | bit;
+    }
+    words.push(BIP39_WORDLIST[idx & 0x7ff]);
+  }
+
+  return words.slice(0, 12).join(' ');
+}
+
+// 从助记词派生 32 字节 master key（base64）
+// 用 PBKDF2 + 助记词作为 password，固定 salt（mnemosyne-v1）派生 32 字节
+export async function masterKeyFromMnemonic(mnemonic: string): Promise<string> {
+  const enc = new TextEncoder();
+  const keyMaterial = await subtle.importKey(
+    'raw',
+    toBufferSource(enc.encode(mnemonic.normalize('NFKD'))),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveKey']
+  );
+  const derived = await subtle.deriveKey(
+    { name: 'PBKDF2', salt: enc.encode('mnemosyne-master-v1'), iterations: 100000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    true,
+    ['encrypt', 'decrypt']
+  );
+  const raw = await subtle.exportKey('raw', derived);
+  return bytesToBase64(new Uint8Array(raw));
+}
+
+// 校验助记词格式：12 个单词、全部在词表中
+export function validateMnemonic(mnemonic: string): { ok: boolean; words: string[] } {
+  const words = mnemonic.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length !== 12) return { ok: false, words };
+  const set = new Set(BIP39_WORDLIST as string[]);
+  for (const w of words) {
+    if (!set.has(w)) return { ok: false, words };
+  }
+  return { ok: true, words };
+}
+
 // 从 base64 字符串导入 AES-GCM 密钥
 export async function importKeyFromBase64(b64: string): Promise<CryptoKey> {
   const raw = base64ToBytes(b64);
