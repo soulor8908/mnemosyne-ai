@@ -1,4 +1,4 @@
-// 笔记编辑器：分栏 markdown 编辑 + 预览
+// 笔记编辑器：分栏 markdown 编辑 + 预览（移动端 tab 切换）
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
@@ -8,7 +8,10 @@ import remarkGfm from 'remark-gfm';
 import { updateNote, getNote, deleteNote } from '@/lib/db/notes';
 import { embedNote } from '@/lib/ai/embed';
 import { debounce } from '@/lib/utils';
+import { Icon } from '@/components/ui/icon';
 import type { Note } from '@/types';
+
+type MobileView = 'edit' | 'preview';
 
 export default function NoteEditorPage() {
   const params = useParams<{ id: string }>();
@@ -18,7 +21,9 @@ export default function NoteEditorPage() {
   const [note, setNote] = useState<Note | null>(null);
   const [content, setContent] = useState('');
   const [title, setTitle] = useState('');
+  // 桌面端：是否显示预览栏；移动端：当前 tab
   const [showPreview, setShowPreview] = useState(true);
+  const [mobileView, setMobileView] = useState<MobileView>('edit');
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const embedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -42,7 +47,6 @@ export default function NoteEditorPage() {
       try {
         await updateNote(id, { title: newTitle, content: newContent });
         setSavedAt(Date.now());
-        // 延迟生成嵌入（content 变化后 3 秒）
         if (embedTimerRef.current) clearTimeout(embedTimerRef.current);
         embedTimerRef.current = setTimeout(() => {
           embedNote(id, newContent).catch((e) => console.error('embed failed', e));
@@ -75,53 +79,90 @@ export default function NoteEditorPage() {
   return (
     <div className="flex h-full flex-col">
       {/* 顶栏 */}
-      <div className="flex items-center justify-between border-b border-ink-200 bg-white px-6 py-3">
+      <div className="flex items-center justify-between gap-2 border-b border-ink-200 bg-white px-4 py-3 sm:px-6">
         <input
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="无标题"
-          className="flex-1 bg-transparent text-lg font-medium text-ink-900 placeholder-ink-300 focus:outline-none"
+          className="min-w-0 flex-1 bg-transparent text-base font-medium text-ink-900 placeholder-ink-300 focus:outline-none sm:text-lg"
         />
-        <div className="ml-4 flex items-center gap-3">
-          <span className="text-xs text-ink-400">
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          <span className="hidden text-xs text-ink-400 xs:inline sm:inline">
             {saving ? '保存中…' : savedAt ? `已保存 ${new Date(savedAt).toLocaleTimeString('zh-CN')}` : ''}
           </span>
+          {/* 桌面端：显示/隐藏预览 */}
           <button
             onClick={() => setShowPreview(!showPreview)}
-            className="rounded-md border border-ink-200 px-3 py-1 text-xs text-ink-600 hover:bg-ink-50"
+            className="hidden items-center gap-1 rounded-md border border-ink-200 px-2.5 py-1 text-xs text-ink-600 hover:bg-ink-50 lg:flex"
           >
+            <Icon name={showPreview ? 'eye-off' : 'eye'} size={14} />
             {showPreview ? '隐藏预览' : '显示预览'}
           </button>
           <button
             onClick={handleDelete}
-            className="rounded-md border border-ink-200 px-3 py-1 text-xs text-red-500 hover:bg-red-50"
+            className="flex items-center gap-1 rounded-md border border-ink-200 px-2.5 py-1 text-xs text-red-500 hover:bg-red-50"
           >
-            删除
+            <Icon name="trash" size={14} />
+            <span className="hidden sm:inline">删除</span>
           </button>
         </div>
       </div>
 
+      {/* 移动端 tab 切换 */}
+      <div className="flex border-b border-ink-200 bg-white lg:hidden">
+        <button
+          onClick={() => setMobileView('edit')}
+          className={`flex flex-1 items-center justify-center gap-1.5 py-2 text-sm ${
+            mobileView === 'edit'
+              ? 'border-b-2 border-accent font-medium text-accent'
+              : 'text-ink-500'
+          }`}
+        >
+          <Icon name="edit" size={16} />
+          编辑
+        </button>
+        <button
+          onClick={() => setMobileView('preview')}
+          className={`flex flex-1 items-center justify-center gap-1.5 py-2 text-sm ${
+            mobileView === 'preview'
+              ? 'border-b-2 border-accent font-medium text-accent'
+              : 'text-ink-500'
+          }`}
+        >
+          <Icon name="eye" size={16} />
+          预览
+        </button>
+      </div>
+
       {/* 编辑区 */}
       <div className="flex flex-1 overflow-hidden">
-        <div className={`flex ${showPreview ? 'w-1/2' : 'w-full'} flex-col`}>
+        {/* 编辑器：桌面端按 showPreview 决定宽度，移动端按 tab 决定显示 */}
+        <div
+          className={`flex flex-col ${
+            showPreview ? 'lg:w-1/2 lg:flex' : 'lg:w-full lg:flex'
+          } ${mobileView === 'edit' ? 'flex w-full' : 'hidden lg:flex'}`}
+        >
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="开始写作…（支持 Markdown）"
-            className="editor-textarea flex-1 resize-none bg-white px-6 py-4 font-mono text-sm leading-7 text-ink-800 placeholder-ink-300 focus:outline-none"
+            className="editor-textarea flex-1 resize-none bg-white px-4 py-4 font-mono text-sm leading-7 text-ink-800 placeholder-ink-300 focus:outline-none sm:px-6"
             spellCheck={false}
           />
         </div>
-        {showPreview && (
-          <div className="w-1/2 overflow-y-auto border-l border-ink-200 bg-ink-50 px-6 py-4">
-            <div className="markdown-body">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {content || '*预览区为空*'}
-              </ReactMarkdown>
-            </div>
+        {/* 预览：桌面端按 showPreview 决定，移动端按 tab 决定 */}
+        <div
+          className={`overflow-y-auto border-l border-ink-200 bg-ink-50 px-4 py-4 sm:px-6 ${
+            showPreview ? 'lg:w-1/2 lg:block' : 'lg:hidden'
+          } ${mobileView === 'preview' ? 'block w-full' : 'hidden lg:block'}`}
+        >
+          <div className="markdown-body">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {content || '*预览区为空*'}
+            </ReactMarkdown>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

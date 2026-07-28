@@ -95,23 +95,23 @@ export default function RecallPage() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-6 text-2xl font-semibold text-ink-900">检索</h1>
+    <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
+      <h1 className="mb-6 text-xl font-semibold text-ink-900 sm:text-2xl">检索</h1>
 
       <form onSubmit={handleSearch} className="mb-6">
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="用自然语言提问，从你的笔记中找答案…"
-            className="flex-1 rounded-lg border border-ink-200 bg-white px-4 py-2 text-sm placeholder-ink-400 focus:border-accent focus:outline-none"
+            className="min-w-0 flex-1 rounded-lg border border-ink-200 bg-white px-4 py-2 text-sm placeholder-ink-400 focus:border-accent focus:outline-none"
             autoFocus
           />
           <button
             type="submit"
             disabled={loading || !query.trim()}
-            className="rounded-md bg-accent px-5 py-2 text-sm text-white hover:bg-accent-hover disabled:opacity-50"
+            className="shrink-0 rounded-md bg-accent px-5 py-2 text-sm text-white hover:bg-accent-hover disabled:opacity-50"
           >
             {loading ? '检索中…' : '检索'}
           </button>

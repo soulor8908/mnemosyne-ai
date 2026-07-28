@@ -53,13 +53,13 @@ export default function ProposalsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-ink-900">AI 提议</h1>
+    <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
+      <div className="mb-6 flex items-center justify-between gap-2">
+        <h1 className="text-xl font-semibold text-ink-900 sm:text-2xl">AI 提议</h1>
         <button
           onClick={handleRunAgent}
           disabled={running}
-          className="rounded-md border border-ink-200 px-3 py-1.5 text-sm text-ink-600 hover:bg-ink-50 disabled:opacity-50"
+          className="shrink-0 rounded-md border border-ink-200 px-3 py-1.5 text-sm text-ink-600 hover:bg-ink-50 disabled:opacity-50"
         >
           {running ? '整理中…' : '手动整理'}
         </button>

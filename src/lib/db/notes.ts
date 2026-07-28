@@ -167,3 +167,26 @@ export async function countNotes(): Promise<number> {
   const db = getDb();
   return db.notes.count();
 }
+
+// 按 ID 列表批量获取笔记
+export async function getNotesByIds(ids: string[]): Promise<Note[]> {
+  if (ids.length === 0) return [];
+  const db = getDb();
+  const notes = await db.notes.bulkGet(ids);
+  return notes.filter((n): n is Note => !!n);
+}
+
+// 批量删除笔记
+export async function bulkDeleteNotes(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const db = getDb();
+  await db.transaction('rw', db.notes, db.bilinks, db.reviewCards, db.snapshots, db.embeddings, async () => {
+    await db.notes.bulkDelete(ids);
+    for (const id of ids) {
+      await db.bilinks.where('srcNoteId').equals(id).or('dstNoteId').equals(id).delete();
+      await db.reviewCards.where('noteId').equals(id).delete();
+      await db.snapshots.where('noteId').equals(id).delete();
+      await db.embeddings.where('noteId').equals(id).delete();
+    }
+  });
+}

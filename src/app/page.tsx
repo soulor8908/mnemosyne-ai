@@ -47,8 +47,8 @@ export default function TodayPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="mb-6 text-2xl font-semibold text-ink-900">今日</h1>
+    <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
+      <h1 className="mb-6 text-xl font-semibold text-ink-900 sm:text-2xl">今日</h1>
 
       {/* 快速捕获 */}
       <section className="mb-8">

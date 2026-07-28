@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Rating, type Grade } from 'ts-fsrs';
 import { getTodayReviewQueue, reviewCard } from '@/lib/fsrs/scheduler';
 import { getNote } from '@/lib/db/notes';
+import { Icon } from '@/components/ui/icon';
 import type { ReviewCard } from '@/types';
 
 const RATINGS: Array<{ value: Grade; label: string; color: string }> = [
@@ -65,11 +66,13 @@ export default function ReviewPage() {
 
   if (queue.length === 0) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-8">
-        <h1 className="mb-6 text-2xl font-semibold text-ink-900">复习</h1>
+      <div className="mx-auto max-w-2xl px-4 py-6 sm:px-6 sm:py-8">
+        <h1 className="mb-6 text-xl font-semibold text-ink-900 sm:text-2xl">复习</h1>
         <div className="rounded-lg border border-ink-200 bg-white p-8 text-center">
-          <div className="text-4xl mb-3">✓</div>
-          <p className="text-ink-700 font-medium">今日复习已完成</p>
+          <div className="mb-3 flex justify-center text-green-500">
+            <Icon name="check" size={36} />
+          </div>
+          <p className="font-medium text-ink-700">今日复习已完成</p>
           <p className="mt-1 text-sm text-ink-400">稍后再来看看，或写些新笔记让 AI 生成更多卡片。</p>
         </div>
       </div>
@@ -79,9 +82,9 @@ export default function ReviewPage() {
   const card = queue[currentIdx];
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-8">
+    <div className="mx-auto max-w-2xl px-4 py-6 sm:px-6 sm:py-8">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-ink-900">复习</h1>
+        <h1 className="text-xl font-semibold text-ink-900 sm:text-2xl">复习</h1>
         <span className="text-sm text-ink-400">
           {currentIdx + 1} / {queue.length}
         </span>
@@ -118,7 +121,7 @@ export default function ReviewPage() {
         )}
 
         {showBack && (
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {RATINGS.map((r) => (
               <button
                 key={r.value}
