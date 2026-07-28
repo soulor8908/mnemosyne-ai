@@ -28,7 +28,12 @@ export type IconName =
   | 'markdown'
   | 'logo'
   | 'list'
-  | 'grid';
+  | 'grid'
+  | 'pin'
+  | 'pin-off'
+  | 'grip'
+  | 'image'
+  | 'paperclip';
 
 interface IconProps extends React.SVGProps<SVGSVGElement> {
   name: IconName;
@@ -165,6 +170,39 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <rect x="3" y="14" width="7" height="7" rx="1" />
       <rect x="14" y="14" width="7" height="7" rx="1" />
     </>
+  ),
+  pin: (
+    <>
+      <path d="M12 17v5" />
+      <path d="M9 10.76V6a1 1 0 011-1h4a1 1 0 011 1v4.76a2 2 0 00.59 1.41l1.83 1.83A1 1 0 0116.41 16H7.59a1 1 0 01-.7-1.71l1.82-1.82A2 2 0 009 10.76z" />
+    </>
+  ),
+  'pin-off': (
+    <>
+      <path d="M12 17v5" />
+      <path d="M9 10.76V6a1 1 0 011-1h4a1 1 0 011 1v4.76a2 2 0 00.59 1.41l1.83 1.83A1 1 0 0116.41 16H7.59a1 1 0 01-.7-1.71l1.82-1.82A2 2 0 009 10.76z" />
+      <path d="M3 3l18 18" />
+    </>
+  ),
+  grip: (
+    <>
+      <circle cx="9" cy="6" r="1" />
+      <circle cx="9" cy="12" r="1" />
+      <circle cx="9" cy="18" r="1" />
+      <circle cx="15" cy="6" r="1" />
+      <circle cx="15" cy="12" r="1" />
+      <circle cx="15" cy="18" r="1" />
+    </>
+  ),
+  image: (
+    <>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <path d="M21 15l-5-5L5 21" />
+    </>
+  ),
+  paperclip: (
+    <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
   ),
 };
 

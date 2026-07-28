@@ -9,6 +9,7 @@ import type {
   EmbeddingRecord,
   Folder,
   UserPrefs,
+  Attachment,
 } from '@/types';
 
 export class MnemosyneDB extends Dexie {
@@ -21,9 +22,11 @@ export class MnemosyneDB extends Dexie {
   embeddings!: Table<EmbeddingRecord, string>;
   folders!: Table<Folder, string>;
   userPrefs!: Table<UserPrefs, string>;
+  attachments!: Table<Attachment, string>;
 
   constructor() {
     super('mnemosyne');
+    // v1: 初始 schema
     this.version(1).stores({
       notes: 'id, title, folderId, status, source, createdAt, updatedAt, accessedAt, syncStatus, *tags',
       bilinks: 'id, srcNoteId, dstNoteId, type, createdAt',
@@ -34,6 +37,19 @@ export class MnemosyneDB extends Dexie {
       embeddings: 'noteId, model, contentHash, generatedAt',
       folders: 'id, name, parentId, createdAt, updatedAt',
       userPrefs: 'id',
+    });
+    // v2: 加 pinned/order 索引 + attachments 表
+    this.version(2).stores({
+      notes: 'id, title, folderId, status, source, createdAt, updatedAt, accessedAt, syncStatus, pinned, order, *tags',
+      bilinks: 'id, srcNoteId, dstNoteId, type, createdAt',
+      proposals: 'id, type, status, createdAt, agentRunId',
+      reviewCards: 'id, noteId, preset, nextReviewAt, lastReviewAt',
+      snapshots: 'id, noteId, createdAt',
+      agentRuns: 'id, startedAt, trigger, status',
+      embeddings: 'noteId, model, contentHash, generatedAt',
+      folders: 'id, name, parentId, createdAt, updatedAt',
+      userPrefs: 'id',
+      attachments: 'id, noteId, isImage, createdAt',
     });
   }
 }

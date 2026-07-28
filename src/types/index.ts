@@ -33,6 +33,8 @@ export interface Note {
   rev: number;
   syncStatus: SyncStatus;
   encryption: EncryptionMode;
+  pinned?: boolean;
+  order?: number;
 }
 
 export type BilinkType = 'manual' | 'ai-proposed' | 'ai-accepted';
@@ -185,4 +187,16 @@ export interface UserPrefs {
   autoApplyProposals: boolean;
   createdAt: number;
   updatedAt: number;
+}
+
+// 笔记附件（图片/文件，Blob 存储在 IndexedDB）
+export interface Attachment {
+  id: string;
+  noteId: string;
+  filename: string;
+  mime: string;
+  size: number;
+  blob: Blob;
+  isImage: boolean;
+  createdAt: number;
 }

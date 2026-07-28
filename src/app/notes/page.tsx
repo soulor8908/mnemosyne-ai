@@ -1,12 +1,19 @@
-// 笔记列表页：搜索、多选、批量导出/删除
+// 笔记列表页：搜索、多选、左滑操作、长按拖动排序、置顶
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
-import Link from 'next/link';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { listNotes, createNote, searchNotesByKeyword, bulkDeleteNotes } from '@/lib/db/notes';
+import {
+  listNotes,
+  createNote,
+  searchNotesByKeyword,
+  bulkDeleteNotes,
+  togglePinned,
+  reorderNotes,
+} from '@/lib/db/notes';
 import { exportSelectedAsJson, exportSelectedAsMarkdown } from '@/lib/markdown/export';
 import { Icon } from '@/components/ui/icon';
+import { SwipeableNoteItem } from '@/components/notes/swipeable-note-item';
 import type { Note } from '@/types';
 
 export default function NotesPage() {
@@ -19,16 +26,20 @@ export default function NotesPage() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState('');
 
+  // 拖动排序状态
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
   useEffect(() => {
     load();
   }, []);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     const all = await listNotes({ limit: 200 });
     setNotes(all);
     setLoading(false);
-  }
+  }, []);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -40,9 +51,8 @@ export default function NotesPage() {
       setNotes(results);
     }, 200);
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, load]);
 
-  // 进入搜索时清空选择
   useEffect(() => {
     setSelected(new Set());
     setSelectMode(false);
@@ -82,6 +92,36 @@ export default function NotesPage() {
     setTimeout(() => setToast(''), 3000);
   }
 
+  // ============ 操作（左滑按钮） ============
+  async function handlePin(id: string, pinned: boolean) {
+    try {
+      await togglePinned(id, pinned);
+      showToast(pinned ? '已置顶' : '已取消置顶');
+      await load();
+    } catch (err) {
+      showToast('操作失败：' + (err as Error).message);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('确认删除此笔记？此操作不可撤销。')) return;
+    setBusy(true);
+    try {
+      await bulkDeleteNotes([id]);
+      showToast('已删除');
+      await load();
+    } catch (err) {
+      showToast('删除失败：' + (err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handlePreview(id: string) {
+    router.push(`/notes/${id}`);
+  }
+
+  // ============ 批量操作 ============
   async function handleExportSelected(format: 'json' | 'md') {
     if (selected.size === 0) return;
     setBusy(true);
@@ -114,6 +154,70 @@ export default function NotesPage() {
       showToast('删除失败：' + (err as Error).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  // ============ 拖动排序 ============
+  // 长按触发：标记该笔记为可拖动
+  function handleLongPress(id: string) {
+    if (selectMode || query.trim()) return;
+    setDraggingId(id);
+    showToast('已进入拖动模式，拖到目标位置释放');
+  }
+
+  function handleLongPressEnd() {
+    // 拖动结束在 onDragEnd 处理
+  }
+
+  // HTML5 drag and drop（桌面 + 长按后的移动端）
+  function getDragHandlers(noteId: string) {
+    if (!draggingId) return undefined;
+    return {
+      onDragStart: (e: React.DragEvent) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', noteId);
+        setDraggingId(noteId);
+      },
+      onDragOver: (e: React.DragEvent) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (dragOverId !== noteId) setDragOverId(noteId);
+      },
+      onDrop: (e: React.DragEvent) => {
+        e.preventDefault();
+        const srcId = e.dataTransfer.getData('text/plain') || draggingId;
+        if (!srcId || srcId === noteId) return;
+        handleReorder(srcId, noteId);
+      },
+      onDragEnd: () => {
+        setDraggingId(null);
+        setDragOverId(null);
+      },
+    };
+  }
+
+  async function handleReorder(srcId: string, dstId: string) {
+    const ids = notes.map((n) => n.id);
+    const srcIdx = ids.indexOf(srcId);
+    const dstIdx = ids.indexOf(dstId);
+    if (srcIdx === -1 || dstIdx === -1 || srcIdx === dstIdx) {
+      setDraggingId(null);
+      setDragOverId(null);
+      return;
+    }
+    // 乐观更新 UI
+    const next = [...notes];
+    const [moved] = next.splice(srcIdx, 1);
+    next.splice(dstIdx, 0, moved);
+    setNotes(next);
+    setDraggingId(null);
+    setDragOverId(null);
+    // 持久化
+    try {
+      await reorderNotes(next.map((n) => n.id));
+    } catch (err) {
+      showToast('排序保存失败：' + (err as Error).message);
+      await load();
     }
   }
 
@@ -158,6 +262,14 @@ export default function NotesPage() {
           className="w-full rounded-lg border border-ink-200 bg-white py-2 pl-9 pr-4 text-sm placeholder-ink-400 focus:border-accent focus:outline-none"
         />
       </div>
+
+      {/* 提示：长按拖动 */}
+      {!selectMode && !query.trim() && notes.length > 1 && (
+        <p className="mb-3 flex items-center gap-1 text-xs text-ink-400">
+          <Icon name="grip" size={12} />
+          提示：长按笔记可拖动排序，左滑露出操作
+        </p>
+      )}
 
       {/* 选择模式下的批量操作工具栏 */}
       {selectMode && (
@@ -217,51 +329,22 @@ export default function NotesPage() {
         </p>
       ) : (
         <div className="space-y-2">
-          {notes.map((note) => {
-            const isSel = selected.has(note.id);
-            return (
-              <div
-                key={note.id}
-                className={`flex items-start gap-3 rounded-lg border bg-white px-4 py-3 transition-colors ${
-                  isSel ? 'border-accent bg-accent/5' : 'border-ink-200 hover:border-accent'
-                }`}
-              >
-                {selectMode && (
-                  <input
-                    type="checkbox"
-                    checked={isSel}
-                    onChange={() => toggleSelect(note.id)}
-                    className="mt-1 h-4 w-4 shrink-0 accent-accent"
-                  />
-                )}
-                <Link
-                  href={`/notes/${note.id}`}
-                  className="min-w-0 flex-1"
-                  onClick={(e) => selectMode && e.preventDefault()}
-                >
-                  <div className="font-medium text-ink-900">{note.title || '无标题'}</div>
-                  <div className="mt-1 line-clamp-2 text-sm text-ink-400 sm:line-clamp-1 sm:truncate">
-                    {note.content.slice(0, 120) || '（空）'}
-                  </div>
-                  {note.tags.length > 0 && (
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {note.tags.slice(0, 3).map((tag) => (
-                        <span
-                          key={tag}
-                          className="rounded bg-ink-100 px-1.5 py-0.5 text-xs text-ink-600"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </Link>
-                <div className="ml-2 shrink-0 text-xs text-ink-400">
-                  {new Date(note.updatedAt).toLocaleDateString('zh-CN')}
-                </div>
-              </div>
-            );
-          })}
+          {notes.map((note) => (
+            <SwipeableNoteItem
+              key={note.id}
+              note={note}
+              selectMode={selectMode}
+              isSelected={selected.has(note.id)}
+              isDragging={draggingId === note.id}
+              onToggleSelect={toggleSelect}
+              onPin={handlePin}
+              onDelete={handleDelete}
+              onPreview={handlePreview}
+              onLongPress={handleLongPress}
+              onLongPressEnd={handleLongPressEnd}
+              dragHandlers={getDragHandlers(note.id)}
+            />
+          ))}
         </div>
       )}
 

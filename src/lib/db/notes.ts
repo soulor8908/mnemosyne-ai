@@ -82,12 +82,13 @@ export async function updateNote(
 
 export async function deleteNote(id: string): Promise<void> {
   const db = getDb();
-  await db.transaction('rw', db.notes, db.bilinks, db.reviewCards, db.snapshots, db.embeddings, async () => {
+  await db.transaction('rw', db.notes, db.bilinks, db.reviewCards, db.snapshots, db.embeddings, db.attachments, async () => {
     await db.notes.delete(id);
     await db.bilinks.where('srcNoteId').equals(id).or('dstNoteId').equals(id).delete();
     await db.reviewCards.where('noteId').equals(id).delete();
     await db.snapshots.where('noteId').equals(id).delete();
     await db.embeddings.where('noteId').equals(id).delete();
+    await db.attachments.where('noteId').equals(id).delete();
   });
 }
 
@@ -110,7 +111,17 @@ export async function listNotes(opts?: {
   const limit = opts?.limit ?? 100;
   const offset = opts?.offset ?? 0;
 
-  return collection.offset(offset).limit(limit).toArray();
+  const list = await collection.offset(offset).limit(limit).toArray();
+  // 置顶优先，其次按 order（降序，null 视为 0），最后按 updatedAt 降序
+  return list.sort((a, b) => {
+    const pa = a.pinned ? 1 : 0;
+    const pb = b.pinned ? 1 : 0;
+    if (pa !== pb) return pb - pa;
+    const oa = a.order ?? 0;
+    const ob = b.order ?? 0;
+    if (oa !== ob) return ob - oa;
+    return b.updatedAt - a.updatedAt;
+  });
 }
 
 export async function searchNotesByKeyword(query: string, limit = 50): Promise<Note[]> {
@@ -180,13 +191,43 @@ export async function getNotesByIds(ids: string[]): Promise<Note[]> {
 export async function bulkDeleteNotes(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   const db = getDb();
-  await db.transaction('rw', db.notes, db.bilinks, db.reviewCards, db.snapshots, db.embeddings, async () => {
+  await db.transaction('rw', db.notes, db.bilinks, db.reviewCards, db.snapshots, db.embeddings, db.attachments, async () => {
     await db.notes.bulkDelete(ids);
     for (const id of ids) {
       await db.bilinks.where('srcNoteId').equals(id).or('dstNoteId').equals(id).delete();
       await db.reviewCards.where('noteId').equals(id).delete();
       await db.snapshots.where('noteId').equals(id).delete();
       await db.embeddings.where('noteId').equals(id).delete();
+      await db.attachments.where('noteId').equals(id).delete();
+    }
+  });
+}
+
+// 置顶/取消置顶
+export async function togglePinned(id: string, pinned: boolean): Promise<void> {
+  const db = getDb();
+  const existing = await db.notes.get(id);
+  if (!existing) return;
+  // 置顶时给一个较大的 order，确保排在前面
+  const order = pinned ? Date.now() : existing.order;
+  await db.notes.update(id, { pinned, order, syncStatus: 'pending' });
+}
+
+// 拖动排序：根据新的 ID 顺序批量更新 order
+// orderedIds 是用户拖动后的完整顺序（从前到后）
+export async function reorderNotes(orderedIds: string[]): Promise<void> {
+  if (orderedIds.length === 0) return;
+  const db = getDb();
+  // 从大到小赋 order（前面的 order 大，排前面）
+  const base = orderedIds.length;
+  await db.transaction('rw', db.notes, async () => {
+    for (let i = 0; i < orderedIds.length; i++) {
+      const id = orderedIds[i];
+      const note = await db.notes.get(id);
+      if (!note) continue;
+      // 已置顶的笔记保持其 order（用 Date.now() 范围），不受拖动影响
+      if (note.pinned) continue;
+      await db.notes.update(id, { order: base - i, syncStatus: 'pending' });
     }
   });
 }
