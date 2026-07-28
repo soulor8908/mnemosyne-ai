@@ -2,12 +2,20 @@
 import { getDb } from '@/lib/db/schema';
 import type { UserPrefs, ReviewPreset } from '@/types';
 import { now, sha256 } from '@/lib/utils';
-import { generateMasterKey, importKeyFromBase64, encrypt, decrypt } from '@/lib/crypto';
+import {
+  generateMnemonicAsync,
+  masterKeyFromMnemonic,
+  validateMnemonic,
+  importKeyFromBase64,
+  encrypt,
+  decrypt,
+} from '@/lib/crypto';
 
 const PREFS_ID = 'singleton' as const;
 
 // 内存缓存 masterKeyHash 与 CryptoKey（避免重复导入）
 let _cachedMasterKey: string | null = null;
+let _cachedMnemonic: string | null = null;
 let _cachedCryptoKey: CryptoKey | null = null;
 
 export async function getOrCreateUserPrefs(): Promise<UserPrefs> {
@@ -28,16 +36,23 @@ export async function getOrCreateUserPrefs(): Promise<UserPrefs> {
   return prefs;
 }
 
-// 初始化 master key（首次使用时生成）
-export async function initMasterKey(): Promise<string> {
-  const existing = _cachedMasterKey;
-  if (existing) return existing;
+/**
+ * 懒生成：第一次需要加密 BYOK Key 时调用。
+ * 生成 12 词助记词 → 派生 master key → 缓存 → 仅存 hash 到 IndexedDB。
+ * 助记词本身只在内存中（供设置页「高级」区块展示），不落 IndexedDB。
+ */
+export async function ensureMasterKey(): Promise<{ mnemonic: string; masterKey: string }> {
+  if (_cachedMnemonic && _cachedMasterKey) {
+    return { mnemonic: _cachedMnemonic, masterKey: _cachedMasterKey };
+  }
 
-  const masterKey = generateMasterKey();
+  const mnemonic = await generateMnemonicAsync();
+  const masterKey = await masterKeyFromMnemonic(mnemonic);
+
+  _cachedMnemonic = mnemonic;
   _cachedMasterKey = masterKey;
   _cachedCryptoKey = await importKeyFromBase64(masterKey);
 
-  // 存储 hash（不存原密钥）
   const db = getDb();
   const prefs = await getOrCreateUserPrefs();
   await db.userPrefs.put({
@@ -46,16 +61,30 @@ export async function initMasterKey(): Promise<string> {
     updatedAt: now(),
   });
 
-  return masterKey;
+  return { mnemonic, masterKey };
 }
 
-// 从外部设置 master key（恢复场景）
-export async function setMasterKey(masterKey: string): Promise<void> {
+/** 返回当前内存中的助记词（若已通过 ensureMasterKey 或 restoreFromMnemonic 载入）。 */
+export function getCachedMnemonic(): string | null {
+  return _cachedMnemonic;
+}
+
+/** 从外部助记词恢复 master key（换设备场景）。 */
+export async function restoreFromMnemonic(mnemonic: string): Promise<void> {
+  const { ok, words } = validateMnemonic(mnemonic);
+  if (!ok) {
+    throw new Error('助记词格式不正确：需要 12 个有效英文单词');
+  }
+  const normalized = words.join(' ');
+  const masterKey = await masterKeyFromMnemonic(normalized);
+
   const prefs = await getOrCreateUserPrefs();
   const hash = await sha256(masterKey);
   if (prefs.masterKeyHash && prefs.masterKeyHash !== hash) {
-    throw new Error('MASTER_KEY 与已存 hash 不匹配');
+    throw new Error('助记词与本设备已存的密钥不匹配，请检查');
   }
+
+  _cachedMnemonic = normalized;
   _cachedMasterKey = masterKey;
   _cachedCryptoKey = await importKeyFromBase64(masterKey);
   const db = getDb();
@@ -80,6 +109,8 @@ export async function getCryptoKey(): Promise<CryptoKey | null> {
 
 // 加密 BYOK key 存储
 export async function saveByokKey(provider: string, apiKey: string): Promise<void> {
+  // 懒生成：第一次保存 BYOK Key 时自动生成 MASTER_KEY
+  await ensureMasterKey();
   const key = await getCryptoKey();
   if (!key) throw new Error('MASTER_KEY 未初始化');
 

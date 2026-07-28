@@ -856,10 +856,10 @@ AI_PROVIDER = "deepseek"
 APP_URL = "https://mnemosyne.pages.dev"
 
 # 密钥通过 wrangler secret put 上传：
-# - MASTER_KEY            : 32 字节 base64
 # - DEEPSEEK_API_KEY      : 平台 Trial 用
 # - GLM_API_KEY           : 平台 Trial 用
 # - OPENAI_API_KEY        : 平台 Trial 用（可选）
+# 注意：MASTER_KEY 不作为 Worker secret，由浏览器端 BIP39 助记词派生。详见 7.1 节
 ```
 
 ### 6.2 免费层成本测算
@@ -899,9 +899,11 @@ npx opennextjs-cloudflare build
 # 5. 部署
 npx wrangler deploy
 
-# 6. 配置密钥
-npx wrangler secret put MASTER_KEY
+# 6. 配置密钥（仅平台 Trial 用，BYOK 用户不需要）
 npx wrangler secret put DEEPSEEK_API_KEY
+# 注意：MASTER_KEY 不作为 Worker secret 上传。
+# 它由浏览器端生成 12 词 BIP39 助记词并派生（src/lib/crypto），仅存于用户设备内存。
+# Worker 代码不读取 env.MASTER_KEY。详见 7.1 节。
 ```
 
 ---
@@ -940,6 +942,10 @@ npx wrangler secret put DEEPSEEK_API_KEY
 
 **关键设计**：
 - MASTER_KEY 永远不落服务端持久化，仅存在于浏览器内存或用户本地
+- **懒生成**：体验用户走平台 Trial / Workers AI 路径不接触密钥；只有当用户第一次保存 BYOK Key 时，浏览器才静默生成 12 词 BIP39 助记词并派生 MASTER_KEY（`ensureMasterKey()`）
+- **助记词派生**：16 字节熵 → 12 词 BIP39 助记词 → PBKDF2(100k iters, salt=`mnemosyne-master-v1`) → 32 字节 AES-GCM key
+- **恢复流程**：换设备凭 12 词助记词恢复，UI 校验词数与词表合法性后再派生
+- **设置页隐藏**：「数据主权」折叠在「设置 → 高级」下，默认不展示给体验用户
 - BYOK Key 在服务端只能短暂解密用于调用 LLM，调用完即清除
 - 所有 AI 调用记录写入 AUTH_AUDIT，用户可在设置中查看
 - Nonce 防重放：每次请求带一次性 nonce，5 分钟过期

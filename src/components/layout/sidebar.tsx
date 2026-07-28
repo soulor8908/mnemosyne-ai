@@ -6,7 +6,6 @@ import { useEffect, useState } from 'react';
 import { countNotes } from '@/lib/db/notes';
 import { countPendingProposals } from '@/lib/db/proposals';
 import { getTodayReviewQueue } from '@/lib/fsrs/scheduler';
-import { initMasterKey } from '@/lib/auth/user-prefs';
 import { Icon, type IconName } from '@/components/ui/icon';
 
 const NAV_ITEMS: Array<{ href: string; label: string; icon: IconName }> = [
@@ -33,7 +32,6 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   useEffect(() => {
     async function init() {
       try {
-        await initMasterKey();
         setInitialized(true);
         const [nc, pp, rq] = await Promise.all([
           countNotes(),

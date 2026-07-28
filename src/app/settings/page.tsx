@@ -1,11 +1,12 @@
-// 设置页：MASTER_KEY 管理、BYOK、导出/导入、隐私模式
+// 设置页：BYOK、导出/导入、隐私模式、高级（助记词管理）
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
 import {
   getOrCreateUserPrefs,
-  initMasterKey,
-  setMasterKey,
+  ensureMasterKey,
+  getCachedMnemonic,
+  restoreFromMnemonic,
   saveByokKey,
   getDecryptedByokKey,
   setFsrsPreset,
@@ -23,9 +24,10 @@ import { Icon } from '@/components/ui/icon';
 import type { ReviewPreset } from '@/types';
 
 export default function SettingsPage() {
-  const [masterKey, setMasterKeyState] = useState<string>('');
-  const [inputKey, setInputKey] = useState('');
-  const [showKey, setShowKey] = useState(false);
+  const [mnemonic, setMnemonicState] = useState<string>('');
+  const [inputMnemonic, setInputMnemonic] = useState('');
+  const [showMnemonic, setShowMnemonic] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [byokProvider, setByokProvider] = useState<'deepseek' | 'glm' | 'openai'>('deepseek');
   const [byokApiKey, setByokApiKey] = useState('');
   const [byokSaved, setByokSaved] = useState<Record<string, boolean>>({});
@@ -43,12 +45,11 @@ export default function SettingsPage() {
   }, []);
 
   async function init() {
-    try {
-      const mk = await initMasterKey();
-      setMasterKeyState(mk);
-    } catch {
-      // 已存在但未缓存，需要用户输入
-    }
+    // 体验路径：不主动生成 MASTER_KEY。
+    // 仅当用户之前已生成过（内存缓存仍在）时回填助记词到 UI。
+    const cached = getCachedMnemonic();
+    if (cached) setMnemonicState(cached);
+
     const prefs = await getOrCreateUserPrefs();
     setFsrsPresetState(prefs.fsrsPreset);
     setPrivacyModeState(prefs.privacyMode);
@@ -60,10 +61,10 @@ export default function SettingsPage() {
     setByokSaved(saved);
   }
 
-  function copyMasterKey() {
-    if (!masterKey) return;
-    navigator.clipboard.writeText(masterKey);
-    showToast('MASTER_KEY 已复制到剪贴板，请妥善保存');
+  function copyMnemonic() {
+    if (!mnemonic) return;
+    navigator.clipboard.writeText(mnemonic);
+    showToast('恢复短语已复制，请妥善保存');
   }
 
   function showToast(msg: string) {
@@ -71,15 +72,26 @@ export default function SettingsPage() {
     setTimeout(() => setMessage(''), 3500);
   }
 
-  async function handleRestoreKey() {
-    if (!inputKey.trim()) return;
+  async function handleRestoreFromMnemonic() {
+    if (!inputMnemonic.trim()) return;
     try {
-      await setMasterKey(inputKey.trim());
-      setMasterKeyState(inputKey.trim());
-      setInputKey('');
-      showToast('MASTER_KEY 已恢复');
+      await restoreFromMnemonic(inputMnemonic.trim());
+      setMnemonicState(inputMnemonic.trim().toLowerCase());
+      setInputMnemonic('');
+      showToast('已从恢复短语解锁本设备数据');
     } catch (err) {
       showToast('恢复失败：' + (err as Error).message);
+    }
+  }
+
+  async function handleRevealMnemonic() {
+    // 用户主动点「显示恢复短语」才生成（若未生成）或展示
+    try {
+      const { mnemonic: m } = await ensureMasterKey();
+      setMnemonicState(m);
+      setShowMnemonic(true);
+    } catch (err) {
+      showToast('生成失败：' + (err as Error).message);
     }
   }
 
@@ -169,58 +181,78 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* MASTER_KEY */}
+      {/* 高级：数据主权（默认折叠，体验用户无需关注） */}
       <section className="mb-8">
-        <h2 className="mb-3 text-lg font-medium text-ink-900">数据主权</h2>
-        <div className="rounded-lg border border-ink-200 bg-white p-4">
-          <p className="mb-3 text-sm text-ink-600">
-            MASTER_KEY 是你的数据加密密钥。服务端只存储它的哈希，密钥本身只存在你的浏览器。
-            换设备时需要用此密钥恢复数据访问。
-          </p>
-          {masterKey ? (
-            <div>
-              <div className="flex items-center gap-2">
-                <code className="min-w-0 flex-1 truncate rounded bg-ink-100 px-3 py-1.5 text-xs text-ink-700">
-                  {showKey ? masterKey : '••••••••••••••••••••••••••••••••'}
-                </code>
+        <button
+          onClick={() => setAdvancedOpen((v) => !v)}
+          className="flex w-full items-center justify-between rounded-lg border border-ink-200 bg-white px-4 py-3 text-left hover:bg-ink-50"
+        >
+          <span className="text-sm font-medium text-ink-700">高级 · 数据主权与恢复短语</span>
+          <Icon name={advancedOpen ? 'chevron-up' : 'chevron-down'} size={16} className="text-ink-400" />
+        </button>
+        {advancedOpen && (
+          <div className="mt-2 rounded-lg border border-ink-200 bg-white p-4">
+            <p className="mb-3 text-sm text-ink-600">
+              你的 BYOK Key 与同步笔记会用一组 12 词的「恢复短语」加密。
+              服务端只存储密钥的哈希，短语本身只存在你的浏览器内存中。
+              换设备或清浏览器数据后，凭这 12 个词即可恢复数据访问。
+            </p>
+
+            {mnemonic ? (
+              <div>
+                <div className="flex items-start gap-2">
+                  <code className="min-w-0 flex-1 rounded bg-ink-100 px-3 py-2 text-xs leading-relaxed text-ink-700 break-words">
+                    {showMnemonic ? mnemonic : '••• ••• ••• ••• ••• ••• ••• ••• ••• ••• ••• •••'}
+                  </code>
+                  <button
+                    onClick={() => setShowMnemonic((v) => !v)}
+                    className="shrink-0 rounded-md border border-ink-200 p-1.5 text-ink-600 hover:bg-ink-50"
+                    aria-label={showMnemonic ? '隐藏' : '显示'}
+                  >
+                    <Icon name={showMnemonic ? 'eye-off' : 'eye'} size={16} />
+                  </button>
+                  <button
+                    onClick={copyMnemonic}
+                    className="flex shrink-0 items-center gap-1 rounded-md border border-ink-200 px-2.5 py-1.5 text-xs text-ink-600 hover:bg-ink-50"
+                  >
+                    <Icon name="copy" size={14} />
+                    <span className="hidden sm:inline">复制</span>
+                  </button>
+                </div>
+                <p className="mt-2 flex items-center gap-1 text-xs text-amber-600">
+                  <Icon name="sparkles" size={12} />
+                  请把这 12 个词抄到离线位置。清浏览器数据后无法找回。
+                </p>
+              </div>
+            ) : (
+              <button
+                onClick={handleRevealMnemonic}
+                className="rounded-md border border-ink-200 px-3 py-1.5 text-sm text-ink-600 hover:bg-ink-50"
+              >
+                显示我的恢复短语
+              </button>
+            )}
+
+            <div className="mt-4 border-t border-ink-100 pt-4">
+              <p className="mb-2 text-xs text-ink-500">换设备恢复</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={inputMnemonic}
+                  onChange={(e) => setInputMnemonic(e.target.value)}
+                  placeholder="粘贴 12 词恢复短语"
+                  className="min-w-0 flex-1 rounded-md border border-ink-200 px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+                />
                 <button
-                  onClick={() => setShowKey((v) => !v)}
-                  className="shrink-0 rounded-md border border-ink-200 p-1.5 text-ink-600 hover:bg-ink-50"
-                  aria-label={showKey ? '隐藏' : '显示'}
+                  onClick={handleRestoreFromMnemonic}
+                  className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-hover"
                 >
-                  <Icon name={showKey ? 'eye-off' : 'eye'} size={16} />
-                </button>
-                <button
-                  onClick={copyMasterKey}
-                  className="flex shrink-0 items-center gap-1 rounded-md border border-ink-200 px-2.5 py-1.5 text-xs text-ink-600 hover:bg-ink-50"
-                >
-                  <Icon name="copy" size={14} />
-                  <span className="hidden sm:inline">复制</span>
+                  恢复
                 </button>
               </div>
-              <p className="mt-2 flex items-center gap-1 text-xs text-red-500">
-                <Icon name="sparkles" size={12} />
-                请立即保存此密钥到安全位置。清浏览器数据后将无法找回。
-              </p>
             </div>
-          ) : (
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={inputKey}
-                onChange={(e) => setInputKey(e.target.value)}
-                placeholder="粘贴已保存的 MASTER_KEY"
-                className="min-w-0 flex-1 rounded-md border border-ink-200 px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-              />
-              <button
-                onClick={handleRestoreKey}
-                className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-hover"
-              >
-                恢复
-              </button>
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </section>
 
       {/* AI BYOK */}
