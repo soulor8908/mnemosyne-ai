@@ -38,7 +38,7 @@ binding = "AI"
 
 [vars]
 AI_PROVIDER = "deepseek"
-APP_URL = "https://mnemosyne.workers.dev"
+APP_URL = "https://mnemosyne.470033918.workers.dev"
 
 # 密钥通过 `wrangler secret put <NAME>` 上传：
 # - MASTER_KEY        : 32 字节 base64
