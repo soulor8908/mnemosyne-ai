@@ -20,6 +20,7 @@ import {
   importFromHtmlFiles,
   type ImportResult,
 } from '@/lib/markdown/export';
+import { ingestInboxFiles } from '@/lib/inbox/ingest';
 import { downloadBlob } from '@/lib/utils';
 import { Icon } from '@/components/ui/icon';
 import type { ReviewPreset } from '@/types';
@@ -40,6 +41,7 @@ export default function SettingsPage() {
   const mdInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const htmlInputRef = useRef<HTMLInputElement>(null);
+  const inboxInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     init();
@@ -157,6 +159,19 @@ export default function SettingsPage() {
     try {
       const result = await importFromHtmlFiles(Array.from(files));
       showImportResult('HTML', result);
+    } finally {
+      setImporting(false);
+      e.target.value = '';
+    }
+  }
+
+  async function handleImportInbox(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setImporting(true);
+    try {
+      const result = await ingestInboxFiles(Array.from(files));
+      showImportResult('飞书 inbox', result);
     } finally {
       setImporting(false);
       e.target.value = '';
@@ -426,6 +441,22 @@ export default function SettingsPage() {
                 accept=".html,.htm,text/html"
                 multiple
                 onChange={handleImportHtml}
+                className="hidden"
+              />
+            </button>
+            <button
+              onClick={() => inboxInputRef.current?.click()}
+              disabled={importing}
+              className="flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/5 px-3 py-1.5 text-sm text-accent hover:bg-accent/10 disabled:opacity-50"
+            >
+              <Icon name="upload" size={15} />
+              飞书 inbox
+              <input
+                ref={inboxInputRef}
+                type="file"
+                accept=".md,.markdown"
+                multiple
+                onChange={handleImportInbox}
                 className="hidden"
               />
             </button>

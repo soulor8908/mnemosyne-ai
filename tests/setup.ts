@@ -21,3 +21,16 @@ if (typeof globalThis.Request === 'undefined') {
   globalThis.Response = Response;
   globalThis.Headers = Headers;
 }
+
+// Polyfill File.prototype.text（jsdom 的 File 缺少 text()，浏览器原生有）
+// 现有 importFromMarkdownFiles 与 inbox ingest 都依赖 file.text()
+if (typeof globalThis.File !== 'undefined' && !File.prototype.text) {
+  File.prototype.text = function (): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(this);
+    });
+  };
+}

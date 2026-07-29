@@ -1,7 +1,7 @@
 // 核心类型定义（对齐技术设计文档第 3 节）
 
 export type NoteStatus = 'draft' | 'settled' | 'archived';
-export type NoteSource = 'manual' | 'clip' | 'voice' | 'bot' | 'email' | 'import';
+export type NoteSource = 'manual' | 'clip' | 'voice' | 'bot' | 'email' | 'import' | 'feishu';
 export type NoteType = 'note' | 'clip' | 'meeting' | 'idea' | 'reading';
 export type SyncStatus = 'local' | 'synced' | 'pending' | 'conflict';
 export type EncryptionMode = 'plain' | 'e2e';
@@ -26,6 +26,8 @@ export interface Note {
   sourceMeta?: {
     url?: string;
     capturedAt?: number;
+    feishuChatId?: string;
+    feishuMessageId?: string;
   };
   createdAt: number;
   updatedAt: number;
