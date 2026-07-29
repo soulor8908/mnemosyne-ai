@@ -1,6 +1,5 @@
 // 夜间 Agent runner（技术设计文档 5.4）
-import { getDb } from '@/lib/db/schema';
-import { getRecentNotes } from '@/lib/db/notes';
+import { getRecentNotes, getNotesByIds } from '@/lib/db/notes';
 import { createProposal } from '@/lib/db/proposals';
 import { startAgentRun, finishAgentRun } from '@/lib/db/agent-runs';
 import { createBilink, findBilink } from '@/lib/db/bilinks';
@@ -10,13 +9,25 @@ import { cosineSimilarity, truncate } from '@/lib/utils';
 import type { Env } from '@/lib/auth/session';
 import type { Note, ProposalPayload } from '@/types';
 
-export async function runAgent(
-  env: Env,
-  byokKeys?: Record<string, string>,
-  trigger: 'cron' | 'manual' = 'manual'
-): Promise<string> {
+// 可注入的 LLM 调用接口：
+// - 客户端调用时，传 fetch /api/chat 的实现（避免依赖 stub env.AI.run）
+// - 服务端 Cron 调用时，不传，runner 内部走 callLLM(env, ...)
+export interface AgentLLMCall {
+  (prompt: string, opts: { system?: string; maxTokens?: number; temperature?: number }): Promise<string>;
+}
+
+export interface RunAgentOptions {
+  byokKeys?: Record<string, string>;
+  trigger?: 'cron' | 'manual';
+  // 客户端调用时注入；服务端运行时为 undefined，runner 内部用 callLLM
+  llmCall?: AgentLLMCall;
+  // 服务端运行时必传；客户端运行时仅当 llmCall 缺省时才需要
+  env?: Env;
+}
+
+export async function runAgent(opts: RunAgentOptions): Promise<string> {
+  const trigger = opts.trigger ?? 'manual';
   const run = await startAgentRun(trigger);
-  const db = getDb();
 
   try {
     // 1. 加载近 7 日笔记
@@ -38,6 +49,14 @@ export async function runAgent(
       recentNotes.some((n) => n.id === e.noteId)
     );
 
+    // 性能修复：批量预加载所有候选目标笔记到 Map，避免 O(N×M) IDB 往返
+    const candidateIds = Array.from(
+      new Set(allEmbeddings.map((e) => e.noteId).filter((id) => !recentNotes.some((n) => n.id === id)))
+    );
+    const candidateNotes = await getNotesByIds(candidateIds);
+    const candidateMap = new Map<string, Note>(candidateNotes.map((n) => [n.id, n]));
+    const recentMap = new Map<string, Note>(recentNotes.map((n) => [n.id, n]));
+
     const linkProposals: Array<{
       srcNote: Note;
       dstNote: Note;
@@ -45,11 +64,11 @@ export async function runAgent(
     }> = [];
 
     for (const re of recentEmbeddings) {
-      const srcNote = recentNotes.find((n) => n.id === re.noteId);
+      const srcNote = recentMap.get(re.noteId);
       if (!srcNote) continue;
       for (const oe of allEmbeddings) {
         if (oe.noteId === re.noteId) continue;
-        const dstNote = await db.notes.get(oe.noteId);
+        const dstNote = candidateMap.get(oe.noteId);
         if (!dstNote || dstNote.status === 'archived') continue;
         const sim = cosineSimilarity(re.vector, oe.vector);
         if (sim >= 0.6) {
@@ -88,10 +107,23 @@ export async function runAgent(
 
     // 4. 调用 LLM 生成复习卡提议（如果有 BYOK 或 Trial）
     const recentSettled = recentNotes.filter((n) => n.status === 'settled').slice(0, 5);
+    const llmCall = opts.llmCall ?? (async (prompt, callOpts) => {
+      if (!opts.env) {
+        // 既没有 llmCall 也没有 env，无法调用 LLM
+        throw new Error('Agent LLM 调用未配置（需提供 llmCall 或 env）');
+      }
+      const { callLLM } = await import('../providers');
+      return callLLM('agent', prompt, {
+        byokKeys: opts.byokKeys,
+        env: opts.env,
+        system: callOpts.system,
+        maxTokens: callOpts.maxTokens,
+        temperature: callOpts.temperature,
+      });
+    });
 
     for (const note of recentSettled) {
       try {
-        const { callLLM } = await import('../providers');
         const prompt = `请从以下笔记中提取 1-2 个核心知识点，生成复习卡片。每张卡片包含 front（问题）和 back（答案）。
 
 笔记标题：${note.title}
@@ -100,9 +132,7 @@ ${truncate(note.content, 1500)}
 
 请以 JSON 数组格式返回：[{"front": "问题", "back": "答案"}]，不要其他文字。`;
 
-        const response = await callLLM('agent', prompt, {
-          byokKeys,
-          env,
+        const response = await llmCall(prompt, {
           system: '你是复习卡片生成助手，只返回 JSON。',
           maxTokens: 500,
           temperature: 0.3,
@@ -128,7 +158,8 @@ ${truncate(note.content, 1500)}
           }
         }
       } catch (err) {
-        console.error('生成复习卡失败', note.id, err);
+        // 不再静默吞掉：日志带上错误对象，便于排查
+        console.error('[Agent] 生成复习卡失败', note.id, err);
       }
     }
 

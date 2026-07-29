@@ -3,9 +3,43 @@
 
 import { useEffect, useState } from 'react';
 import { listProposals, decideProposal } from '@/lib/db/proposals';
-import { applyProposal } from '@/lib/ai/agent/runner';
-import { runAgent } from '@/lib/ai/agent/runner';
+import { applyProposal, runAgent } from '@/lib/ai/agent/runner';
 import type { Proposal } from '@/types';
+
+// 客户端 LLM 调用：通过 /api/chat 路由，服务端用 BYOK Key 或 Trial 模式调用大模型
+// 这是修复的关键：旧实现把 stub env ({ AI: {} as any }) 传给 runAgent，
+// 导致 callLLM 内部 env.AI.run() 抛 "AI.run is not a function"，
+// 被 try/catch 静默吞掉，复习卡提议永远不生成，UI 还显示"Agent 运行完成"。
+async function clientLLMCall(
+  prompt: string,
+  opts: { system?: string; maxTokens?: number; temperature?: number }
+): Promise<string> {
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messages: [
+        ...(opts.system ? [{ role: 'system', content: opts.system }] : []),
+        { role: 'user', content: prompt }],
+    }),
+  });
+  if (!res.ok || !res.body) {
+    throw new Error(`Agent LLM 调用失败: ${res.status}`);
+  }
+  // /api/chat 走 SSE 流式；累积所有 chunk 拼成完整文本
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let full = '';
+  // 简单累积：服务端目前用 streamText 输出文本 token，这里直接拼字节
+  // 如未来切到严格 SSE 帧，需解析 data: 前缀
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    full += decoder.decode(value, { stream: true });
+  }
+  return full;
+}
 
 export default function ProposalsPage() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -35,14 +69,11 @@ export default function ProposalsPage() {
     setRunning(true);
     setAgentResult('');
     try {
-      // Agent 需要浏览器上下文（IndexedDB），直接调用客户端逻辑
-      // byokKeys 通过 fetch 获取（这里简化，Agent 会用本地缓存的 key）
-      const runId = await runAgent(
-        // env 在客户端不可用，传一个最小占位
-        { AI: {} as any, KV: {} as any, NOTES_DELTA: {} as any, AUTH_SESSIONS: {} as any, AUTH_NONCES: {} as any, AUTH_AUDIT: {} as any, ASSETS: {} as any, AI_PROVIDER: 'deepseek', APP_URL: '' },
-        undefined,
-        'manual'
-      );
+      // 客户端调用：注入 clientLLMCall，不再传 stub env
+      const runId = await runAgent({
+        llmCall: clientLLMCall,
+        trigger: 'manual',
+      });
       setAgentResult(`Agent 运行完成（runId: ${runId}）`);
       await load();
     } catch (err) {

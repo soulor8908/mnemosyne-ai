@@ -95,3 +95,18 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   const denom = Math.sqrt(normA) * Math.sqrt(normB);
   return denom === 0 ? 0 : dot / denom;
 }
+
+// 触发浏览器下载（笔记导出 / 设置页导出共用）
+// 修复要点：原实现分别复制在 notes/page.tsx 与 settings/page.tsx，
+// 同样的 16 行代码两处维护，存在漂移风险。
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // 释放对象 URL，避免内存泄漏
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}

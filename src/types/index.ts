@@ -127,7 +127,7 @@ export interface Snapshot {
   noteId: string;
   content: string;
   createdAt: number;
-  reason: 'auto' | 'manual' | 'pre-agent-apply';
+  reason: 'auto' | 'manual' | 'pre-agent-apply' | 'pre-sync-conflict';
 }
 
 export type AgentRunTrigger = 'cron' | 'manual';

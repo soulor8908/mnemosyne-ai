@@ -124,19 +124,58 @@ export async function syncDown(env: Env, userId: string, sinceRev = 0): Promise<
       await db.notes.put(note);
       pulled++;
     } else if (local.rev < rev) {
-      // 本地版本旧，拉取最新
+      // 本地版本旧
       const content = await decryptJSON<{ content: string }>(delta.contentCipher, key);
       const meta = await decryptJSON<Partial<Note>>(delta.meta, key);
 
-      // 字段级合并（技术设计 4.3）
+      // 修复要点：本地若有未提交的编辑（syncStatus === 'pending'），不能直接覆盖，
+      // 否则用户最近一次离线编辑会丢失。改为：
+      // 1) 保存本地当前内容快照（snapshots 表）
+      // 2) 写入远程版本（保证设备间一致）
+      // 3) 标记 syncStatus = 'conflict'，UI 提示用户在快照中查看丢失的本地编辑
+      // 技术设计文档 4.3 承诺字段级合并：tags 并集、frontmatter 浅合并（updatedAt 优先），
+      // 其余字段按 updatedAt 取更新者
+      if (local.syncStatus === 'pending') {
+        try {
+          await db.snapshots.add({
+            id: `${noteId}:${local.rev}:${Date.now()}`,
+            noteId,
+            content: local.content,
+            createdAt: Date.now(),
+            reason: 'pre-sync-conflict',
+          });
+        } catch (snapErr) {
+          console.error('[sync] 保存冲突快照失败', noteId, snapErr);
+        }
+        conflicts++;
+      }
+
+      // frontmatter 浅合并：本地 + 远程，远程字段优先（updatedAt 更新者）
+      const mergedFrontmatter = {
+        ...(local.frontmatter ?? {}),
+        ...(meta.frontmatter ?? {}),
+      };
+
       const merged: Note = {
         ...local,
-        ...meta,
+        // 远程 meta 优先（updatedAt 更新者）
+        title: meta.title ?? local.title,
+        folderId: meta.folderId ?? local.folderId,
+        status: meta.status ?? local.status,
+        source: meta.source ?? local.source,
+        sourceMeta: meta.sourceMeta ?? local.sourceMeta,
+        encryption: meta.encryption ?? local.encryption,
+        frontmatter: mergedFrontmatter,
+        // 内容按 updatedAt 取最新；远程 delta 携带 updatedAt，本地已比较 rev < rev
         content: content.content ?? local.content,
-        tags: [...new Set([...(local.tags ?? []), ...(meta.tags ?? [])])], // 并集
-        rev: delta.rev,
-        syncStatus: 'synced',
+        // tags 并集（设计 4.3）
+        tags: [...new Set([...(local.tags ?? []), ...(meta.tags ?? [])])],
+        createdAt: meta.createdAt ?? local.createdAt,
+        accessedAt: Math.max(local.accessedAt ?? 0, meta.accessedAt ?? 0),
         updatedAt: Math.max(local.updatedAt, delta.updatedAt),
+        rev: delta.rev,
+        // 若本地有 pending 编辑被快照保存，标记为冲突让用户感知
+        syncStatus: local.syncStatus === 'pending' ? 'conflict' : 'synced',
       };
       await db.notes.put(merged);
       pulled++;

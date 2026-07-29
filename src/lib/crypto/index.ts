@@ -100,13 +100,52 @@ export async function masterKeyFromMnemonic(mnemonic: string): Promise<string> {
   return bytesToBase64(new Uint8Array(raw));
 }
 
-// 校验助记词格式：12 个单词、全部在词表中
-export function validateMnemonic(mnemonic: string): { ok: boolean; words: string[] } {
+// 校验助记词：12 个单词、全部在词表中、BIP39 checksum 一致
+// 修复要点：旧实现只校验"词数 + 词表"，12 个合法词乱序也能通过校验，
+// 用户输错顺序时会在下游 masterKeyFromMnemonic 后比对 masterKeyHash 失败，
+// 错误信息（"助记词与本设备已存的密钥不匹配"）让人困惑——以为是密钥错，
+// 实际是助记词顺序/单词错了。这里加 checksum 校验，提供准确的失败原因。
+export async function validateMnemonic(mnemonic: string): Promise<{ ok: boolean; words: string[]; error?: string }> {
   const words = mnemonic.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (words.length !== 12) return { ok: false, words };
-  const set = new Set(BIP39_WORDLIST as string[]);
+  if (words.length !== 12) {
+    return { ok: false, words, error: '助记词必须是 12 个单词' };
+  }
+  const wordIndex = new Map<string, number>();
+  for (let i = 0; i < BIP39_WORDLIST.length; i++) {
+    wordIndex.set(BIP39_WORDLIST[i], i);
+  }
+  const indices: number[] = [];
   for (const w of words) {
-    if (!set.has(w)) return { ok: false, words };
+    const idx = wordIndex.get(w);
+    if (idx === undefined) {
+      return { ok: false, words, error: `单词不在 BIP39 词表中：${w}` };
+    }
+    indices.push(idx);
+  }
+
+  // 12 词 = 132 bits = 128 bits entropy + 4 bits checksum
+  // 还原 17 字节（128+8 bits）的 combined，再取前 16 字节作为 entropy
+  const combined = new Uint8Array(17);
+  let bitPos = 0;
+  for (const idx of indices) {
+    for (let j = 10; j >= 0; j--) {
+      const bit = (idx >> j) & 1;
+      const bytePos = Math.floor(bitPos / 8);
+      const bitInByte = 7 - (bitPos % 8);
+      if (bit) combined[bytePos] |= 1 << bitInByte;
+      bitPos++;
+    }
+  }
+  const entropy = combined.slice(0, 16);
+  // 取 combined 第 16 字节的高 4 位作为助记词携带的 checksum（128/32 = 4 bits）
+  const storedChecksum = (combined[16] >> 4) & 0xf;
+
+  const hashBuf = await globalThis.crypto.subtle.digest('SHA-256', toBufferSource(entropy));
+  const hash = new Uint8Array(hashBuf);
+  const computedChecksum = (hash[0] >> 4) & 0xf; // 高 4 位
+
+  if (storedChecksum !== computedChecksum) {
+    return { ok: false, words, error: '助记词校验失败：单词或顺序有误' };
   }
   return { ok: true, words };
 }

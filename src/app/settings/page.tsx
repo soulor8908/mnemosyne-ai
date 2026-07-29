@@ -20,6 +20,7 @@ import {
   importFromHtmlFiles,
   type ImportResult,
 } from '@/lib/markdown/export';
+import { downloadBlob } from '@/lib/utils';
 import { Icon } from '@/components/ui/icon';
 import type { ReviewPreset } from '@/types';
 
@@ -443,13 +444,4 @@ export default function SettingsPage() {
       </p>
     </div>
   );
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }

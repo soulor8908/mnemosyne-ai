@@ -4,8 +4,11 @@ import type { NoteFrontmatter } from '@/types';
 const BILINK_REGEX = /\[\[([^\]]+)\]\]/g;
 
 // 解析 frontmatter（YAML 风格）
+// 修复要点：旧正则 `^---\n([\s\S]*?)\n---\n([\s\S]*)$` 只支持 LF，
+// Windows / Notion 导出的 Markdown 多为 CRLF，frontmatter 会被静默忽略。
+// 改为支持 \r?\n，并把 body 开头的多余 \r\n / \n 截掉。
 export function parseFrontmatter(content: string): { frontmatter: NoteFrontmatter; body: string } {
-  const match = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
   if (!match) {
     return { frontmatter: {}, body: content };
   }

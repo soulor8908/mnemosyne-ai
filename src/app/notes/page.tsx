@@ -12,6 +12,7 @@ import {
   reorderNotes,
 } from '@/lib/db/notes';
 import { exportSelectedAsJson, exportSelectedAsMarkdown } from '@/lib/markdown/export';
+import { downloadBlob } from '@/lib/utils';
 import { Icon } from '@/components/ui/icon';
 import { SwipeableNoteItem } from '@/components/notes/swipeable-note-item';
 import type { Note } from '@/types';
@@ -356,13 +357,4 @@ export default function NotesPage() {
       )}
     </div>
   );
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }

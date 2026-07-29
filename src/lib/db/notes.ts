@@ -111,9 +111,12 @@ export async function listNotes(opts?: {
   const limit = opts?.limit ?? 100;
   const offset = opts?.offset ?? 0;
 
-  const list = await collection.offset(offset).limit(limit).toArray();
-  // 置顶优先，其次按 order（降序，null 视为 0），最后按 updatedAt 降序
-  return list.sort((a, b) => {
+  // 修复要点：必须先按 pinned/order/updatedAt 排序，再分页。
+  // 旧实现先 offset+limit 截断再 sort，导致 updatedAt 落在分页窗口外的
+  // 置顶笔记永远无法浮到列表顶部，用户会以为笔记丢失。
+  // pinned/order 字段未建索引，只能在 JS 排序；单用户笔记 < 1 万条可接受。
+  const all = await collection.toArray();
+  all.sort((a, b) => {
     const pa = a.pinned ? 1 : 0;
     const pb = b.pinned ? 1 : 0;
     if (pa !== pb) return pb - pa;
@@ -122,6 +125,7 @@ export async function listNotes(opts?: {
     if (oa !== ob) return ob - oa;
     return b.updatedAt - a.updatedAt;
   });
+  return all.slice(offset, offset + limit);
 }
 
 export async function searchNotesByKeyword(query: string, limit = 50): Promise<Note[]> {

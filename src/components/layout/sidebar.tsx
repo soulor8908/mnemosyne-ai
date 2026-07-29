@@ -32,7 +32,6 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   useEffect(() => {
     async function init() {
       try {
-        setInitialized(true);
         const [nc, pp, rq] = await Promise.all([
           countNotes(),
           countPendingProposals(),
@@ -41,8 +40,12 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
         setNoteCount(nc);
         setPendingProposals(pp);
         setReviewQueue(rq.length);
+        // 修复要点：旧实现在 Promise.all 之前就 setInitialized(true)，
+        // 导致页脚短暂显示"笔记 0 条"，给用户"数据丢了"的错觉。
+        setInitialized(true);
       } catch (err) {
         console.error('初始化失败', err);
+        setInitialized(true); // 即使失败也解除 loading 态，避免永远卡住
       }
     }
     init();

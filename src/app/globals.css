@@ -112,3 +112,15 @@ body {
   border: 1px solid #e4e4e7;
   padding: 0.4em 0.8em;
 }
+
+/* 无障碍：尊重用户"减少动画"系统偏好（设计文档 §5.3 承诺"所有动画可关闭"） */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -71,9 +71,9 @@ export function getCachedMnemonic(): string | null {
 
 /** 从外部助记词恢复 master key（换设备场景）。 */
 export async function restoreFromMnemonic(mnemonic: string): Promise<void> {
-  const { ok, words } = validateMnemonic(mnemonic);
+  const { ok, words, error } = await validateMnemonic(mnemonic);
   if (!ok) {
-    throw new Error('助记词格式不正确：需要 12 个有效英文单词');
+    throw new Error(error ?? '助记词格式不正确：需要 12 个有效英文单词');
   }
   const normalized = words.join(' ');
   const masterKey = await masterKeyFromMnemonic(normalized);
