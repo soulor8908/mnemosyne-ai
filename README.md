@@ -2,114 +2,156 @@
 
 > 让 AI 替你维护知识库，让你的思考永不丢失，并永远属于你自己。
 
-一个 **local-first 的 AI 云笔记**（早期原型）。数据的真理之源在你的浏览器（IndexedDB），云端只保存端到端加密后的备份；AI 负责帮你检索、串联和复习知识，而不是替你写作。
+一个 **local-first 的 AI 云笔记**。数据的真理之源在你的浏览器（IndexedDB），云端只保存端到端加密后的备份；AI 负责帮你检索、串联和复习知识，而不是替你写作。
 
-**项目状态：个人原型（pre-alpha）。** 下表如实区分"已实现"与"仅在设计文档中"，避免夸大。
+## 核心架构
 
-## 已实现 ✅
+```
+┌─────────────────────────────────────────────────────────────┐
+│                       客户端（浏览器）                         │
+│                                                             │
+│  助记词（12 词，BIP39）── PBKDF2 ──► MASTER_KEY（256-bit）    │
+│       │                                                     │
+│       ├──► AES-GCM 加密 ──► Dexie/IndexedDB（本地真理）       │
+│       ├──► SCRAM-lite 登录（masterKey 永不出客户端）           │
+│       └──► 向量检索（HNSW / 全量余弦，本地推理）               │
+│                                                             │
+└──────────────────────┬──────────────────────────────────────┘
+                       │ HTTPS（只传 verifier/密文/令牌）
+                       ▼
+┌─────────────────────────────────────────────────────────────┐
+│            Cloudflare Workers + KV / Docker 自托管            │
+│                                                             │
+│  零信任认证 │ 加密同步 │ MCP Server │ RAGAS 评估 │ Agent       │
+│  ⚠️ 服务端从未持有 masterKey，无法解密任何笔记内容             │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
 
-| 能力 | 说明 | 代码位置 |
+## 已实现能力
+
+### 数据层
+
+| 能力 | 说明 | 代码 |
 |---|---|---|
-| 本地笔记 | Dexie/IndexedDB 存储，版本化 schema 迁移，置顶/排序/附件 | `src/lib/db/` |
-| 混合检索 | 关键词 + 语义向量 + RRF 融合 | `src/lib/ai/search.ts` |
-| 端到端加密 | AES-GCM + PBKDF2（10 万次迭代），云端只见密文 | `src/lib/crypto/` |
-| BIP39 助记词 | 12 词生成/校验（含 checksum）/派生主密钥，换设备恢复 | `src/lib/crypto/index.ts` |
-| 云端同步 | 密文 delta 上传 Cloudflare KV，冲突时保快照标记 | `src/lib/sync/engine.ts` |
-| API 鉴权 | 所有 `/api/*` 走 Bearer 令牌；支持遗留共享令牌 `SYNC_TOKEN` 与零信任会话令牌双通道 | `src/lib/auth/guard.ts` |
-| 多用户零信任登录 | 零知识挑战应答登录：服务端只存 `verifier`、永不接收主密钥；会话按用户隔离，KV 读写强校验归属 | `src/lib/auth/zerotrust.ts`、`src/app/api/auth/{start,verify}/` |
-| AI 问答 | 基于笔记上下文的流式对话（DeepSeek/GLM/OpenAI，BYOK 优先） | `src/app/api/chat/` |
-| 间隔重复 | FSRS 算法复习卡 | `src/lib/fsrs/` |
-| 导入导出 | Markdown / JSON / HTML 导入导出，数据无锁定 | `src/lib/markdown/export.ts` |
-| 收集箱 | 飞书分享捕获 → inbox 导入 | `src/lib/inbox/` |
-| 引用溯源 + 拒答 | 检索答案按来源编号 `[n]` 标注出处；无任何相关笔记时诚实拒答，绝不调用 LLM 编造 | `src/lib/ai/grounding.ts`、`src/app/recall/` |
-| 网页剪藏 | 服务端抓取 URL 提取正文落库（绕开浏览器 CORS） | `src/app/api/capture/`、`src/app/capture/` |
-| OpenAPI / MCP 开放 | 标准 OpenAPI 3.1 规范 + 可运行的 MCP stdio 服务器（capture/embed/ask/search 四工具），让 Claude Desktop、Cursor 等把本应用当「记忆后端」 | `openapi.yaml`、`src/mcp/` |
+| 本地笔记 | Dexie/IndexedDB，版本化 schema（v3），置顶/排序/附件 | [src/lib/db/](src/lib/db/) |
+| 端到端加密 | AES-GCM + PBKDF2（10万次），云端只见密文 | [src/lib/crypto/](src/lib/crypto/) |
+| BIP39 助记词 | 12 词生成/校验（含 checksum）/派生主密钥，跨设备恢复 | [src/lib/crypto/index.ts](src/lib/crypto/index.ts) |
+| 加密同步 | 密文 delta 上传 KV，字段级合并 + 冲突快照 | [src/lib/sync/engine.ts](src/lib/sync/engine.ts) |
 
-## 设计中 / 未实现 📋
+### 认证层
 
-以下内容在 `docs/` 设计文档中有完整方案，但**代码尚未落地**：
+| 能力 | 说明 | 代码 |
+|---|---|---|
+| 零信任多用户登录 | SCRAM-lite 挑战应答，masterKey 永不上传，verifier 存储 | [src/lib/auth/zerotrust.ts](src/lib/auth/zerotrust.ts) |
+| 双令牌鉴权 | SYNC_TOKEN（遗留）+ 会话令牌，sha256 时序安全比较，fail-closed | [src/lib/auth/guard.ts](src/lib/auth/guard.ts) |
+| 审计日志 | 登录/操作可追溯，90 天 TTL | [src/lib/auth/session.ts](src/lib/auth/session.ts) |
 
-- 夜间自动整理 Agent（Cron 触发）——目前 Agent 需在客户端手动触发，链接提议基于余弦相似度而非 LLM
-- R2 大附件存储
+### AI 层
 
-## 快速开始
+| 能力 | 说明 | 代码 |
+|---|---|---|
+| 混合检索 | 关键词 + 语义向量 + RRF 融合，模型严格过滤防维度混用 | [src/lib/ai/search.ts](src/lib/ai/search.ts) |
+| HNSW 索引 | 纯 TS 实现 HNSW 近似最近邻，O(log n) 查询，召回率 96-100% | [src/lib/ai/hnsw.ts](src/lib/ai/hnsw.ts) |
+| Cross-Encoder 重排 | Python FastAPI 服务，bge-reranker-v2-m3，候选 top-20 重排 top-5 | [services/rerank/](services/rerank/) |
+| RAGAS 评估 | 4 指标（faithfulness/relevancy/recall/precision）+ 35 条测试集 + LLM-as-Judge | [src/lib/ai/eval/](src/lib/ai/eval/) |
+| 夜间 Agent | 双链提议（向量余弦）+ 复习卡生成（LLM）+ 幂等键 | [src/lib/ai/agent/runner.ts](src/lib/ai/agent/runner.ts) |
+| 多 Agent 协作 | Supervisor 模式：Collector → Reviewer → Writer，状态机编排 + 降级 | [src/lib/ai/agent/multi-agent.ts](src/lib/ai/agent/multi-agent.ts) |
+| Agent 可观测性 | 7 step 轨迹追踪 + 失败模式聚合分析 | [src/lib/db/agent-traces.ts](src/lib/db/agent-traces.ts) |
+| 网页剪藏 | 服务端抓取 + 纯函数正文提取（无 DOM 依赖，Workers 可跑） | [src/lib/ai/grounding.ts](src/lib/ai/grounding.ts) |
+| 浏览器内推理 | WebGPU 优先 + WASM 降级，@xenova/transformers 本地嵌入 | [src/lib/ai/local-inference.ts](src/lib/ai/local-inference.ts) |
+| 间隔重复 | FSRS 算法复习卡 | [src/lib/fsrs/](src/lib/fsrs/) |
 
-```bash
-npm install
+### 开放层
 
-# 本地开发：创建 .dev.vars（已 gitignore）写入 SYNC_TOKEN=<自定义令牌>
-npm run dev
-```
+| 能力 | 说明 | 代码 |
+|---|---|---|
+| MCP Server | 标准 stdio + 4 工具（capture/embed/ask/search），Claude Desktop 可直连 | [src/mcp/server.ts](src/mcp/server.ts) |
+| OpenAPI 3.1 | 全端点文档化，Bearer 鉴权，E2E 加密边界 | [openapi.yaml](openapi.yaml) |
+| 飞书捕获 | 飞书分享 → AI 总结 → inbox markdown → 导入 | [src/lib/inbox/](src/lib/inbox/) |
 
-首次使用（二选一）：
+### 工程层
 
-1. **零信任登录（推荐，多用户）**：设置 → 完成助记词初始化后，点「用助记词登录」。全程不向服务端发送主密钥，登录后获得按用户隔离的会话令牌，多人可共享同一部署而互不接触数据。
-2. **单用户共享令牌**：设置 → 「服务端访问令牌」填入与 `wrangler secret put SYNC_TOKEN` 相同的值。
-
-如需 AI 能力，在「AI 配置」填入自己的 API Key（BYOK，加密存储）。
-
-## 部署（Cloudflare Workers）
-
-```bash
-cp wrangler.toml.example wrangler.toml   # 填入你自己的 KV namespace id
-wrangler secret put SYNC_TOKEN           # API 访问令牌（必需）
-npm run deploy
-```
-
-## 安全模型（简要）
-
-- **MASTER_KEY 永不离开客户端**：由 12 词 BIP39 助记词派生，仅存内存；服务端与 KV 只见密文。
-- **助记词是唯一恢复手段**：请抄写保存。校验含 BIP39 checksum，错词/乱序会被明确拒绝。
-- **零信任登录**：服务端只保存 `verifier = H(主密钥)`，无法反推主密钥。登录用挑战应答证明「你掌握主密钥」而非传递它；会话令牌按用户隔离，所有 KV 读写强校验归属，杜绝跨用户读写。
-- **SYNC_TOKEN 是遗留共享访问令牌**，只控制谁能调用 API，与笔记加密无关；单用户部署仍可用。
-- 历史提交曾泄漏 KV namespace id（非凭证，风险低）；介意者可重建 namespace，模板见 `wrangler.toml.example`。
-
-## OpenAPI 与 MCP（开放集成）
-
-项目提供两套开放接口，方便外部工具把 Mnemosyne 当作「记忆后端」来用：
-
-1. **OpenAPI 规范** [`openapi.yaml`](./openapi.yaml)——文档化全部 `/api/*` 端点、鉴权方式与**端到端加密边界**（服务端只见密文，真实笔记检索在客户端进行）。CI 中有测试校验规范完整性。
-2. **MCP stdio 服务器** [`src/mcp/`](./src/mcp/)——基于 `@modelcontextprotocol/sdk`，暴露 4 个工具：
-
-   | 工具 | 作用 |
-   |---|---|
-   | `mnemosyne_capture_webpage` | 剪藏网页：服务端抓取并提取正文，返回 `{ title, content, url, capturedAt }` |
-   | `mnemosyne_embed_text` | 为文本生成向量（Workers AI bge-base-en-v1.5，768 维） |
-   | `mnemosyne_ask` | 基于 `context` 中的笔记上下文问答，逐条 `[n]` 标出处；无上下文则诚实拒答 |
-   | `mnemosyne_search_notes` | 返回 `queryVector`；若设置本地导出文件，额外在导出的明文笔记上做**本机关键词检索** |
-
-### 运行 MCP 服务器
-
-```bash
-# 必需：访问令牌（SYNC_TOKEN 或零信任会话令牌）
-export MNEMOSYNE_TOKEN=<你的令牌>
-# 可选：部署地址（默认 http://localhost:3000）
-export MNEMOSYNE_BASE_URL=https://your-deployment.workers.dev
-# 可选：指向你「自己导出的明文 JSON」（见应用内导出），启用本地检索（数据不出本机）
-export MNEMOSYNE_NOTES_EXPORT=/path/to/mnemosyne-export.json
-
-npm run mcp
-```
-
-### 接入 Claude Desktop / Cursor
-
-在 MCP 客户端配置中注册一个 `stdio` 类型的 server，命令为 `npx tsx`（指向本项目 `src/mcp/server.ts`）或已安装的 `npm run mcp`，并传入上述环境变量即可。
-
-> **隐私边界**：因笔记为端到端加密、明文只在浏览器本地，MCP 服务器的 `search_notes` 默认只返回 `queryVector`（真实匹配在客户端）。要获得可检索的笔记结果，设置 `MNEMOSYNE_NOTES_EXPORT` 指向你本机导出的明文 JSON——这不会解密或上传任何云端数据。
+| 能力 | 说明 | 代码 |
+|---|---|---|
+| 质量工程 | 19 测试文件 / 166 用例 / 4 层门禁 / GitHub Actions CI | [tests/](tests/) |
+| Docker 自托管 | docker-compose 三服务（web + redis + rerank），数据主权完全自主 | [docker-compose.yml](docker-compose.yml) |
+| 多模型路由 | DeepSeek / GLM / OpenAI BYOK 优先，免费层降级 | [src/lib/ai/providers/](src/lib/ai/providers/) |
 
 ## 技术栈
 
-Next.js 15 (App Router) · React 19 · TypeScript · Tailwind · Dexie · Cloudflare Workers/KV/Workers AI (@opennextjs/cloudflare) · Vercel AI SDK · ts-fsrs · zod
+**前端**：Next.js 15 · React 19 · TypeScript · Tailwind 3 · Dexie/IndexedDB
 
-## 文档
+**AI**：Vercel AI SDK · Workers AI · @xenova/transformers · @modelcontextprotocol/sdk · ts-fsrs
 
-- `docs/PRODUCT_DESIGN.md` — 产品定位、差异化与演进路径
-- `docs/TECHNICAL_DESIGN.md` — 架构决策与安全设计
+**后端**：Cloudflare Workers + KV + R2 · Python FastAPI（重排服务）
 
-## 测试
+**工程**：Vitest（166 tests）· Playwright · ESLint · OpenAPI 3.1 · Docker Compose
+
+## 快速开始
+
+### Cloudflare 部署
 
 ```bash
-npm test            # vitest 单元/集成测试
-npm run typecheck   # TypeScript 检查
-npm run quality-gate
+npm install
+cp wrangler.toml.example wrangler.toml  # 填入 KV/R2/AI bindings
+npm run dev                               # 本地开发
+npm run deploy                            # 部署到 Workers
 ```
+
+### Docker 自托管
+
+```bash
+cp .env.example .env  # 填入 SYNC_TOKEN、BYOK keys
+docker-compose up -d  # 启动 web:3000 + redis:6379 + rerank:8001
+```
+
+详见 [docker/README.md](docker/README.md)。
+
+### MCP Server 配置
+
+Claude Desktop 的 `claude_desktop_config.json`：
+
+```json
+{
+  "mcpServers": {
+    "mnemosyne": {
+      "command": "npx",
+      "args": ["tsx", "src/mcp/server.ts"],
+      "env": {
+        "MNEMOSYNE_BASE_URL": "https://your-app.workers.dev",
+        "MNEMOSYNE_TOKEN": "<会话令牌>"
+      }
+    }
+  }
+}
+```
+
+## 技术博客
+
+每篇都有真实代码 + 真实踩坑，发掘金/知乎后简历挂链接。
+
+1. [Local-First + 零信任多用户登录的云笔记架构](docs/blog/01-local-first-zerotrust-architecture.md)
+2. [从 0 到 1 写一个标准 MCP Server](docs/blog/02-mcp-server-from-scratch.md)
+3. [混合检索的坑：维度不匹配 bug 复盘](docs/blog/03-hybrid-search-dimension-mismatch-bug.md)
+4. [RAGAS 实战：给 RAG 系统装上仪表盘](docs/blog/04-ragas-evaluation-in-practice.md)
+
+## 设计文档
+
+- [产品设计](docs/PRODUCT_DESIGN.md) · [技术设计](docs/TECHNICAL_DESIGN.md)
+- [飞书捕获设计](docs/superpowers/specs/2026-07-29-feishu-share-capture-design.md)
+- [向量数据库选型](docs/vector-db-selection.md)
+- [Agent 失败模式分析](docs/agent-failure-modes.md)
+- [找工作练兵场规划](docs/CAREER_DRILL_PLAN.md)
+
+## 项目状态
+
+个人项目，pre-alpha。下表如实区分"已实现"与"设计中"。
+
+**已实现**：上表所有能力均有代码 + 测试覆盖（166 用例）。
+
+**设计中**：浏览器内 Whisper 语音转写、移动端 PWA、协作编辑、加密密钥轮换。
+
+## License
+
+MIT
