@@ -323,7 +323,10 @@ export default function NotesPage() {
 
       {/* 列表 */}
       {loading ? (
-        <p className="text-sm text-ink-400">加载中…</p>
+        <div className="flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-4 py-3 text-sm text-ink-400">
+          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-ink-300 border-t-accent" />
+          加载笔记…
+        </div>
       ) : notes.length === 0 ? (
         <p className="text-sm text-ink-400">
           {query ? '没有匹配的笔记' : '还没有笔记，点击「新建」开始'}

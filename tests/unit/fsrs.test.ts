@@ -16,9 +16,9 @@ import type { ReviewPreset } from '@/types';
 const PRESETS: ReviewPreset[] = ['conservative', 'standard', 'aggressive'];
 
 describe('FSRS card 序列化往返', () => {
-  it('cardToState → stateToCard 保持关键字段', () => {
+  it('cardToState → stateToCard 保持关键字段', async () => {
     for (const preset of PRESETS) {
-      const card = createNewCard(preset);
+      const card = await createNewCard(preset);
       const state = cardToState(card);
       const back = stateToCard(state);
       // due Date 往返
@@ -32,9 +32,9 @@ describe('FSRS card 序列化往返', () => {
     }
   });
 
-  it('同一卡片不同评分产生不同调度（Easy 间隔 > Good > Again）', () => {
-    const f = getFsrs('standard');
-    const card = createNewCard('standard');
+  it('同一卡片不同评分产生不同调度（Easy 间隔 > Good > Again）', async () => {
+    const f = await getFsrs('standard');
+    const card = await createNewCard('standard');
     const r = f.repeat(card, new Date());
     const againDue = r[Rating.Again].card.due.getTime();
     const goodDue = r[Rating.Good].card.due.getTime();

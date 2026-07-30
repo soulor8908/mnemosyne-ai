@@ -24,3 +24,34 @@ jobs:
 
       - name: Quality gate (lint + typecheck + test)
         run: npm run quality-gate
+
+  bundle-size:
+    name: Bundle Size Guard
+    runs-on: ubuntu-latest
+    # Cloudflare 国内访问慢，对体积敏感；任何首屏/懒加载 chunk 体积回退都阻断合并。
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Bundle size check
+        run: npm run bundle:check
+
+      - name: Upload bundle report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-report
+          path: .next/bundle-report.json
+          if-no-files-found: warn
+          retention-days: 30

@@ -17,15 +17,28 @@ import {
   exportAsMarkdownBundle,
   importFromMarkdownFiles,
   importFromJson,
-  importFromHtmlFiles,
   type ImportResult,
 } from '@/lib/markdown/export';
-import { ingestInboxFiles } from '@/lib/inbox/ingest';
 import { getSyncToken, setSyncToken } from '@/lib/api/client';
-import { loginWithMnemonic } from '@/lib/auth/client-auth';
 import { downloadBlob } from '@/lib/utils';
 import { Icon } from '@/components/ui/icon';
 import type { ReviewPreset } from '@/types';
+
+// 懒加载：HTML 导入（含 DOMParser + htmlToMarkdown walker）与飞书 inbox 导入
+// （inbox/parser 顶层 import 'yaml'，≈94KB）只在用户点击对应按钮时才加载。
+async function importFromHtmlFilesLazy(files: File[]): Promise<ImportResult> {
+  const { importFromHtmlFiles } = await import('@/lib/markdown/export');
+  return importFromHtmlFiles(files);
+}
+async function ingestInboxFilesLazy(files: File[]): Promise<ImportResult> {
+  const { ingestInboxFiles } = await import('@/lib/inbox/ingest');
+  return ingestInboxFiles(files);
+}
+// 懒加载：零信任登录仅在用户点击「用助记词登录」时才拉入 client-auth（→ crypto → BIP39 词表）。
+async function loginWithMnemonicLazy() {
+  const { loginWithMnemonic } = await import('@/lib/auth/client-auth');
+  return loginWithMnemonic();
+}
 
 export default function SettingsPage() {
   const [mnemonic, setMnemonicState] = useState<string>('');
@@ -133,7 +146,7 @@ export default function SettingsPage() {
     setLoginState('loading');
     setLoginMsg('');
     try {
-      const { userId } = await loginWithMnemonic();
+      const { userId } = await loginWithMnemonicLazy();
       setLoginState('ok');
       setLoginMsg(`已登录（零信任会话，用户 ${userId.slice(0, 8)}…）`);
       showToast('零信任登录成功');
@@ -194,7 +207,7 @@ export default function SettingsPage() {
     if (!files || files.length === 0) return;
     setImporting(true);
     try {
-      const result = await importFromHtmlFiles(Array.from(files));
+      const result = await importFromHtmlFilesLazy(Array.from(files));
       showImportResult('HTML', result);
     } finally {
       setImporting(false);
@@ -207,7 +220,7 @@ export default function SettingsPage() {
     if (!files || files.length === 0) return;
     setImporting(true);
     try {
-      const result = await ingestInboxFiles(Array.from(files));
+      const result = await ingestInboxFilesLazy(Array.from(files));
       showImportResult('飞书 inbox', result);
     } finally {
       setImporting(false);

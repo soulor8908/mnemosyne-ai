@@ -1,15 +1,10 @@
 // 用户偏好管理（本地存储 MASTER_KEY 与 BYOK keys）
+// 拆分要点：crypto 模块内含 BIP39 英文词表（≈17KB JSON），仅在生成/恢复助记词、
+// 加密 BYOK Key 时需要。把它改为按需动态 import，使只读 prefs 的页面
+// （sidebar / 今日页 / 检索页 / 复习页）不再被迫加载 BIP39 词表。
 import { getDb } from '@/lib/db/schema';
 import type { UserPrefs, ReviewPreset } from '@/types';
 import { now, sha256 } from '@/lib/utils';
-import {
-  generateMnemonicAsync,
-  masterKeyFromMnemonic,
-  validateMnemonic,
-  importKeyFromBase64,
-  encrypt,
-  decrypt,
-} from '@/lib/crypto';
 
 const PREFS_ID = 'singleton' as const;
 
@@ -46,6 +41,9 @@ export async function ensureMasterKey(): Promise<{ mnemonic: string; masterKey: 
     return { mnemonic: _cachedMnemonic, masterKey: _cachedMasterKey };
   }
 
+  const { generateMnemonicAsync, masterKeyFromMnemonic, importKeyFromBase64 } = await import(
+    '@/lib/crypto'
+  );
   const mnemonic = await generateMnemonicAsync();
   const masterKey = await masterKeyFromMnemonic(mnemonic);
 
@@ -71,6 +69,9 @@ export function getCachedMnemonic(): string | null {
 
 /** 从外部助记词恢复 master key（换设备场景）。 */
 export async function restoreFromMnemonic(mnemonic: string): Promise<void> {
+  const { validateMnemonic, masterKeyFromMnemonic, importKeyFromBase64 } = await import(
+    '@/lib/crypto'
+  );
   const { ok, words, error } = await validateMnemonic(mnemonic);
   if (!ok) {
     throw new Error(error ?? '助记词格式不正确：需要 12 个有效英文单词');
@@ -103,6 +104,7 @@ export async function getCryptoKey(): Promise<CryptoKey | null> {
   if (_cachedCryptoKey) return _cachedCryptoKey;
   const mk = _cachedMasterKey;
   if (!mk) return null;
+  const { importKeyFromBase64 } = await import('@/lib/crypto');
   _cachedCryptoKey = await importKeyFromBase64(mk);
   return _cachedCryptoKey;
 }
@@ -114,6 +116,7 @@ export async function saveByokKey(provider: string, apiKey: string): Promise<voi
   const key = await getCryptoKey();
   if (!key) throw new Error('MASTER_KEY 未初始化');
 
+  const { encrypt } = await import('@/lib/crypto');
   const prefs = await getOrCreateUserPrefs();
   const byokKeys = prefs.byokKeys ?? {};
   byokKeys[provider] = await encrypt(apiKey, key);
@@ -132,6 +135,7 @@ export async function getDecryptedByokKey(provider: string): Promise<string | nu
   const prefs = await getOrCreateUserPrefs();
   const cipher = prefs.byokKeys?.[provider];
   if (!cipher) return null;
+  const { decrypt } = await import('@/lib/crypto');
   return decrypt(cipher, key);
 }
 

@@ -1,3 +1,9 @@
+import bundleAnalyzer from '@next/bundle-analyzer';
+
+const withBundleAnalyzer = bundleAnalyzer({
+  enabled: process.env.ANALYZE === 'true',
+});
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // OpenNext 需要 standalone 输出（否则 opennextjs-cloudflare build 找不到 pages-manifest.json）
@@ -7,6 +13,19 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '5mb',
     },
+    // 优化打包：把第三方重依赖按文件级拆分，避免 barrel import 把整个包并进首屏 bundle。
+    optimizePackageImports: [
+      'date-fns',
+      'react-markdown',
+      'remark-gfm',
+      'rehype-highlight',
+      'ts-fsrs',
+      'dexie',
+      'dexie-react-hooks',
+      'zod',
+      'yaml',
+      '@modelcontextprotocol/sdk',
+    ],
   },
   // @xenova/transformers（及其可选原生依赖）只在浏览器端运行本地 embedding，
   // 服务端（Cloudflare Worker）永远不会执行它们。若不排除，Next 的输出文件
@@ -36,8 +55,54 @@ const nextConfig = {
         sharp: false,
       };
     }
+
+    // 客户端：把"按需异步加载"的重依赖强制拆成独立 chunk，避免被默认打包策略
+    // 合并进首屏 shared chunk。Next 15 的 splitChunks 默认对 node_modules 走 vendors
+    // 组，但大于一定体积的依赖仍可能进 shared chunk。这里用 cacheGroups 显式拆分，
+    // chunks:'async' 表示只在动态 import 时生效，不会改变静态 import 的行为。
+    if (!isServer) {
+      config.optimization = config.optimization || {};
+      config.optimization.splitChunks = config.optimization.splitChunks || {};
+      const existing = config.optimization.splitChunks;
+      const cacheGroups =
+        typeof existing === 'object' && !Array.isArray(existing)
+          ? { ...(existing.cacheGroups || {}) }
+          : {};
+
+      // @xenova/transformers（含 onnxruntime-web）≈ 500KB，仅在隐私模式本地嵌入时需要
+      cacheGroups.xenova = {
+        test: /[\\/]node_modules[\\/]@xenova[\\/]/,
+        name: 'xenova-transformers',
+        chunks: 'async',
+        priority: 30,
+      };
+      // markdown 渲染栈（react-markdown + remark-gfm + micromark + unified 等）≈ 140KB
+      cacheGroups.markdown = {
+        test: /[\\/]node_modules[\\/](react-markdown|remark-[^\\/]+|rehype-[^\\/]+|unified|micromark[^\\/]*|mdast[^\\/]*|hast[^\\/]*|vfile|unist[^\\/]*)[\\/]/,
+        name: 'markdown-stack',
+        chunks: 'async',
+        priority: 25,
+      };
+      // yaml 解析器（仅飞书 inbox 解析用到）≈ 94KB
+      cacheGroups.yaml = {
+        test: /[\\/]node_modules[\\/]yaml[\\/]/,
+        name: 'yaml-parser',
+        chunks: 'async',
+        priority: 25,
+      };
+      // ts-fsrs 间隔重复算法 ≈ 19KB
+      cacheGroups.fsrs = {
+        test: /[\\/]node_modules[\\/]ts-fsrs[\\/]/,
+        name: 'ts-fsrs',
+        chunks: 'async',
+        priority: 20,
+      };
+
+      existing.cacheGroups = cacheGroups;
+    }
+
     return config;
   },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);

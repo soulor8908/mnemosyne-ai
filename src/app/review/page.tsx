@@ -60,7 +60,10 @@ export default function ReviewPage() {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center text-ink-400">加载中…</div>
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-ink-400">
+        <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-ink-300 border-t-accent" />
+        <span className="text-sm">加载复习卡…</span>
+      </div>
     );
   }
 

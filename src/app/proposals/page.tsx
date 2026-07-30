@@ -3,9 +3,21 @@
 
 import { useEffect, useState } from 'react';
 import { listProposals, decideProposal } from '@/lib/db/proposals';
-import { applyProposal, runAgent } from '@/lib/ai/agent/runner';
 import { apiFetch } from '@/lib/api/client';
 import type { Proposal } from '@/types';
+
+// 懒加载 Agent runner：它静态拉入 zod + db/agent-runs + db/agent-traces + db/bilinks
+// + fsrs/scheduler 等一整套（≈55KB），只在「手动整理」或「接受提议」时才需要。
+async function runAgentLazy(opts: Parameters<
+  typeof import('@/lib/ai/agent/runner')['runAgent']
+>[0]) {
+  const { runAgent } = await import('@/lib/ai/agent/runner');
+  return runAgent(opts);
+}
+async function applyProposalLazy(id: string) {
+  const { applyProposal } = await import('@/lib/ai/agent/runner');
+  return applyProposal(id);
+}
 
 // 客户端 LLM 调用：通过 /api/chat 路由，服务端用 BYOK Key 或 Trial 模式调用大模型
 // 这是修复的关键：旧实现把 stub env ({ AI: {} as any }) 传给 runAgent，
@@ -46,24 +58,45 @@ export default function ProposalsPage() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [running, setRunning] = useState(false);
   const [agentResult, setAgentResult] = useState<string>('');
+  const [actingId, setActingId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     load();
   }, []);
 
   async function load() {
-    const list = await listProposals({ status: 'pending', limit: 100 });
-    setProposals(list);
+    setLoading(true);
+    try {
+      const list = await listProposals({ status: 'pending', limit: 100 });
+      setProposals(list);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleAccept(id: string) {
-    await applyProposal(id);
-    setProposals((prev) => prev.filter((p) => p.id !== id));
+    setActingId(id);
+    try {
+      await applyProposalLazy(id);
+      setProposals((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      setAgentResult(`接受失败：${(err as Error).message}`);
+    } finally {
+      setActingId(null);
+    }
   }
 
   async function handleDismiss(id: string) {
-    await decideProposal(id, 'dismissed');
-    setProposals((prev) => prev.filter((p) => p.id !== id));
+    setActingId(id);
+    try {
+      await decideProposal(id, 'dismissed');
+      setProposals((prev) => prev.filter((p) => p.id !== id));
+    } catch (err) {
+      setAgentResult(`忽略失败：${(err as Error).message}`);
+    } finally {
+      setActingId(null);
+    }
   }
 
   async function handleRunAgent() {
@@ -71,7 +104,7 @@ export default function ProposalsPage() {
     setAgentResult('');
     try {
       // 客户端调用：注入 clientLLMCall，不再传 stub env
-      const runId = await runAgent({
+      const runId = await runAgentLazy({
         llmCall: clientLLMCall,
         trigger: 'manual',
       });
@@ -103,7 +136,12 @@ export default function ProposalsPage() {
         </div>
       )}
 
-      {proposals.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center gap-2 rounded-lg border border-ink-200 bg-white p-8 text-sm text-ink-400">
+          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-ink-300 border-t-accent" />
+          加载提议…
+        </div>
+      ) : proposals.length === 0 ? (
         <div className="rounded-lg border border-ink-200 bg-white p-8 text-center">
           <p className="text-ink-400">暂无待确认的提议</p>
           <p className="mt-1 text-sm text-ink-400">
@@ -142,13 +180,18 @@ export default function ProposalsPage() {
               <div className="flex gap-2">
                 <button
                   onClick={() => handleAccept(p.id)}
-                  className="rounded-md bg-accent px-3 py-1 text-xs text-white hover:bg-accent-hover"
+                  disabled={actingId === p.id}
+                  className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1 text-xs text-white hover:bg-accent-hover disabled:opacity-50"
                 >
-                  接受
+                  {actingId === p.id && (
+                    <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                  )}
+                  {actingId === p.id ? '处理中…' : '接受'}
                 </button>
                 <button
                   onClick={() => handleDismiss(p.id)}
-                  className="rounded-md border border-ink-200 px-3 py-1 text-xs text-ink-600 hover:bg-ink-50"
+                  disabled={actingId === p.id}
+                  className="rounded-md border border-ink-200 px-3 py-1 text-xs text-ink-600 hover:bg-ink-50 disabled:opacity-50"
                 >
                   忽略
                 </button>

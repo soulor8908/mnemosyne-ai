@@ -1,33 +1,50 @@
 // FSRS 复习调度
-import { fsrs, generatorParameters, createEmptyCard, type Card, type Grade } from 'ts-fsrs';
+// 拆分要点：ts-fsrs（≈19KB）只在真正打分/建卡时才需要，而 getTodayReviewQueue
+// 仅做 IndexedDB 索引查询 + preset 过滤，不依赖 ts-fsrs。把 ts-fsrs 改为函数内
+// 动态 import + 实例缓存，使 sidebar / 今日页 / 检索页 的 First Load 不再被迫
+// 拉入 ts-fsrs（只有 /review 页和 Agent 触发建卡时才加载）。
+import type { FSRSParameters, Card, Grade } from 'ts-fsrs';
 import type { ReviewPreset, FsrsCardState, ReviewCard } from '@/types';
 import { genId, now } from '@/lib/utils';
 import { getDb } from '@/lib/db/schema';
 import { getOrCreateUserPrefs } from '@/lib/auth/user-prefs';
 
 // 3 种预设（对齐技术设计文档，参数名用下划线）
-const PRESETS: Record<ReviewPreset, Partial<import('ts-fsrs').FSRSParameters>> = {
+const PRESETS: Record<ReviewPreset, Partial<FSRSParameters>> = {
   conservative: { request_retention: 0.95, maximum_interval: 36500 },
   standard: { request_retention: 0.9, maximum_interval: 36500 },
   aggressive: { request_retention: 0.8, maximum_interval: 36500 },
 };
 
-const fsrsInstances: Record<ReviewPreset, ReturnType<typeof fsrs>> = {
-  conservative: fsrs(generatorParameters(PRESETS.conservative)),
-  standard: fsrs(generatorParameters(PRESETS.standard)),
-  aggressive: fsrs(generatorParameters(PRESETS.aggressive)),
-};
+// 懒加载：首次调用 getFsrs 时才 import ts-fsrs 并构造实例。
+// 模块与实例都缓存，避免重复加载；之后的 await 几乎零成本。
+type TsFsrsModule = typeof import('ts-fsrs');
+type FsrsInstance = ReturnType<TsFsrsModule['fsrs']>;
+let _tsFsrsModule: Promise<TsFsrsModule> | null = null;
+const _fsrsInstances: Partial<Record<ReviewPreset, FsrsInstance>> = {};
 
-export function getFsrs(preset: ReviewPreset) {
-  return fsrsInstances[preset];
+async function loadFsrsModule() {
+  if (!_tsFsrsModule) {
+    _tsFsrsModule = import('ts-fsrs');
+  }
+  return _tsFsrsModule;
+}
+
+export async function getFsrs(preset: ReviewPreset): Promise<FsrsInstance> {
+  if (_fsrsInstances[preset]) return _fsrsInstances[preset]!;
+  const mod = await loadFsrsModule();
+  const instance = mod.fsrs(mod.generatorParameters(PRESETS[preset]));
+  _fsrsInstances[preset] = instance;
+  return instance;
 }
 
 // 新卡片初始状态
-export function createNewCard(_preset: ReviewPreset): Card {
-  return createEmptyCard(new Date());
+export async function createNewCard(_preset: ReviewPreset): Promise<Card> {
+  const mod = await loadFsrsModule();
+  return mod.createEmptyCard(new Date());
 }
 
-// card <-> FsrsCardState 序列化
+// card <-> FsrsCardState 序列化（纯函数，不依赖 ts-fsrs 运行时）
 export function cardToState(card: Card): FsrsCardState {
   return {
     due: card.due instanceof Date ? card.due.getTime() : card.due,
@@ -70,7 +87,7 @@ export async function reviewCard(
   const card = await db.reviewCards.get(cardId);
   if (!card) return undefined;
 
-  const f = getFsrs(card.preset);
+  const f = await getFsrs(card.preset);
   const currentCard = stateToCard(card.fsrsState);
   const preview = f.repeat(currentCard, new Date());
   const result = preview[rating];
@@ -87,7 +104,7 @@ export async function reviewCard(
   return updated;
 }
 
-// 获取今日待复习卡片
+// 获取今日待复习卡片（不依赖 ts-fsrs，仅做索引查询 + preset 过滤）
 export async function getTodayReviewQueue(): Promise<ReviewCard[]> {
   const db = getDb();
   const prefs = await getOrCreateUserPrefs();
@@ -107,7 +124,7 @@ export async function generateReviewCard(
 ): Promise<ReviewCard> {
   const db = getDb();
   const prefs = await getOrCreateUserPrefs();
-  const card = createNewCard(prefs.fsrsPreset);
+  const card = await createNewCard(prefs.fsrsPreset);
   const reviewCard: ReviewCard = {
     id: genId('card'),
     noteId,

@@ -15,20 +15,26 @@ export default function TodayPage() {
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [reviewCount, setReviewCount] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     refresh();
   }, []);
 
   async function refresh() {
-    const [r, p, rq] = await Promise.all([
-      getRecentNotes(3),
-      listProposals({ status: 'pending', limit: 5 }),
-      getTodayReviewQueue(),
-    ]);
-    setRecent(r);
-    setProposals(p);
-    setReviewCount(rq.length);
+    setLoading(true);
+    try {
+      const [r, p, rq] = await Promise.all([
+        getRecentNotes(3),
+        listProposals({ status: 'pending', limit: 5 }),
+        getTodayReviewQueue(),
+      ]);
+      setRecent(r);
+      setProposals(p);
+      setReviewCount(rq.length);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleQuickSave() {
@@ -136,7 +142,12 @@ export default function TodayPage() {
           </Link>
         </div>
         <div className="space-y-2">
-          {recent.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-4 py-3 text-sm text-ink-400">
+              <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-ink-300 border-t-accent" />
+              加载中…
+            </div>
+          ) : recent.length === 0 ? (
             <p className="text-sm text-ink-400">还没有笔记，从上面开始记录吧。</p>
           ) : (
             recent.map((note) => (

@@ -1,0 +1,10 @@
+{
+  "initialTotalBytes": 486955,
+  "lazyTotalBytes": 2030809,
+  "chunks": {
+    "markdown-stack": 120690,
+    "ts-fsrs": 22355,
+    "xenova-transformers": 226790,
+    "yaml-parser": 105998
+  }
+}

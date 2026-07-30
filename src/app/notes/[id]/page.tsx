@@ -3,9 +3,8 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { useParams, useRouter } from 'next/navigation';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { updateNote, getNote, deleteNote } from '@/lib/db/notes';
 import { embedNote } from '@/lib/ai/embed';
 import { debounce } from '@/lib/utils';
@@ -18,6 +17,18 @@ import {
   revokeUrlCache,
 } from '@/lib/db/attachments';
 import type { Note, Attachment } from '@/types';
+
+// 懒加载 Markdown 预览：react-markdown + remark-gfm + micromark 整套 ≈140KB，
+// 只在实际渲染预览时作为独立 chunk 加载，不进入编辑器页 First Load JS。
+const MarkdownPreview = dynamic(() => import('@/components/notes/markdown-preview'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center gap-2 text-xs text-ink-400">
+      <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-ink-300 border-t-accent" />
+      加载预览…
+    </div>
+  ),
+});
 
 type MobileView = 'edit' | 'preview';
 
@@ -205,7 +216,10 @@ export default function NoteEditorPage() {
 
   if (!note) {
     return (
-      <div className="flex h-full items-center justify-center text-ink-400">加载中…</div>
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-ink-400">
+        <span className="inline-block h-5 w-5 animate-spin rounded-full border-2 border-ink-300 border-t-accent" />
+        <span className="text-sm">加载笔记…</span>
+      </div>
     );
   }
 
@@ -325,9 +339,10 @@ export default function NoteEditorPage() {
           } ${mobileView === 'preview' ? 'block w-full' : 'hidden lg:block'}`}
         >
           <div className="markdown-body">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {displayContent || '*预览区为空*'}
-            </ReactMarkdown>
+            <MarkdownPreview
+              content={displayContent}
+              components={markdownComponents}
+            />
           </div>
         </div>
 

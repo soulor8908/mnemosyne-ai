@@ -6,6 +6,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "analyze": "ANALYZE=true next build",
+    "bundle:check": "node scripts/bundle-size.mjs --bail",
+    "bundle:report": "node scripts/bundle-size.mjs",
+    "bundle:update": "node scripts/bundle-size.mjs --update",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest run",
@@ -33,7 +37,6 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^9.0.1",
-    "rehype-highlight": "^7.0.0",
     "remark-gfm": "^4.0.0",
     "server-only": "^0.0.1",
     "ts-fsrs": "^4.5.0",
@@ -41,6 +44,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@next/bundle-analyzer": "^16.2.12",
     "@opennextjs/cloudflare": "^1.20.2",
     "@playwright/test": "^1.61.1",
     "@testing-library/jest-dom": "^6.9.1",
