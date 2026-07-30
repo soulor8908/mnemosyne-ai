@@ -1,4 +1,4 @@
-// 设置页：BYOK、导出/导入、隐私模式、高级（助记词管理）
+// 设置页：钥匙管理、登录与云同步、AI 配置、导出/导入、隐私模式
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
@@ -19,7 +19,7 @@ import {
   importFromJson,
   type ImportResult,
 } from '@/lib/markdown/export';
-import { getSyncToken, setSyncToken } from '@/lib/api/client';
+import { getSyncToken } from '@/lib/api/client';
 import { downloadBlob } from '@/lib/utils';
 import { Icon } from '@/components/ui/icon';
 import type { ReviewPreset } from '@/types';
@@ -45,8 +45,7 @@ export default function SettingsPage() {
   const [inputMnemonic, setInputMnemonic] = useState('');
   const [showMnemonic, setShowMnemonic] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [syncTokenInput, setSyncTokenInput] = useState('');
-  const [syncTokenSaved, setSyncTokenSaved] = useState(false);
+  const [hasToken, setHasToken] = useState(false);
   const [loginState, setLoginState] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
   const [loginMsg, setLoginMsg] = useState('');
   const [byokProvider, setByokProvider] = useState<'deepseek' | 'glm' | 'openai'>('deepseek');
@@ -72,8 +71,8 @@ export default function SettingsPage() {
     const cached = getCachedMnemonic();
     if (cached) setMnemonicState(cached);
 
-    // 回填访问令牌状态（不回显明文）
-    setSyncTokenSaved(!!getSyncToken());
+    // 回填登录状态（是否已持有会话令牌）
+    setHasToken(!!getSyncToken());
 
     const prefs = await getOrCreateUserPrefs();
     setFsrsPresetState(prefs.fsrsPreset);
@@ -128,28 +127,15 @@ export default function SettingsPage() {
     showToast(`${byokProvider} API Key 已加密保存`);
   }
 
-  function handleSaveSyncToken() {
-    if (!syncTokenInput.trim()) return;
-    setSyncToken(syncTokenInput.trim());
-    setSyncTokenInput('');
-    setSyncTokenSaved(true);
-    showToast('访问令牌已保存到本设备');
-  }
-
-  function handleClearSyncToken() {
-    setSyncToken('');
-    setSyncTokenSaved(false);
-    showToast('访问令牌已清除');
-  }
-
   async function handleLogin() {
     setLoginState('loading');
     setLoginMsg('');
     try {
       const { userId } = await loginWithMnemonicLazy();
       setLoginState('ok');
-      setLoginMsg(`已登录（零信任会话，用户 ${userId.slice(0, 8)}…）`);
-      showToast('零信任登录成功');
+      setHasToken(true);
+      setLoginMsg(`已登录（用户 ${userId.slice(0, 8)}…）`);
+      showToast('登录成功，云端功能已开启');
     } catch (err) {
       setLoginState('error');
       setLoginMsg((err as Error).message);
@@ -247,21 +233,41 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* 高级：数据主权（默认折叠，体验用户无需关注） */}
+      {/* 新手引导：未登录且尚未生成钥匙时，顶部提示先创建钥匙 */}
+      {!hasToken && !mnemonic && (
+        <div className="mb-6 rounded-lg border border-accent/30 bg-accent/5 px-4 py-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-ink-700">
+              你的笔记现在只存在这台设备上。想用 AI 和云同步，先创建一把钥匙。
+            </p>
+            <button
+              onClick={async () => {
+                setAdvancedOpen(true);
+                await handleRevealMnemonic();
+              }}
+              className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-hover"
+            >
+              创建我的钥匙
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 我的钥匙（恢复短语） */}
       <section className="mb-8">
         <button
           onClick={() => setAdvancedOpen((v) => !v)}
           className="flex w-full items-center justify-between rounded-lg border border-ink-200 bg-white px-4 py-3 text-left hover:bg-ink-50"
         >
-          <span className="text-sm font-medium text-ink-700">高级 · 数据主权与恢复短语</span>
+          <span className="text-sm font-medium text-ink-700">我的钥匙（恢复短语）</span>
           <Icon name={advancedOpen ? 'chevron-up' : 'chevron-down'} size={16} className="text-ink-400" />
         </button>
         {advancedOpen && (
           <div className="mt-2 rounded-lg border border-ink-200 bg-white p-4">
             <p className="mb-3 text-sm text-ink-600">
-              你的 BYOK Key 与同步笔记会用一组 12 词的「恢复短语」加密。
-              服务端只存储密钥的哈希，短语本身只存在你的浏览器内存中。
-              换设备或清浏览器数据后，凭这 12 个词即可恢复数据访问。
+              你的 AI Key 和同步笔记会用一组 12 个词的钥匙加密。
+              这 12 个词只存在你的浏览器里，服务器永远拿不到。
+              换设备或清浏览器数据后，凭这 12 个词就能恢复数据。
             </p>
 
             {mnemonic ? (
@@ -321,60 +327,13 @@ export default function SettingsPage() {
         )}
       </section>
 
-      {/* 服务端访问令牌 */}
+      {/* 登录与云同步 */}
       <section className="mb-8">
-        <h2 className="mb-3 text-lg font-medium text-ink-900">服务端访问令牌</h2>
+        <h2 className="mb-3 text-lg font-medium text-ink-900">登录与云同步</h2>
         <div className="rounded-lg border border-ink-200 bg-white p-4">
           <p className="mb-3 text-sm text-ink-600">
-            所有云端能力（AI 对话、云端嵌入、同步）都需要访问令牌。部署时通过{' '}
-            <code className="rounded bg-ink-100 px-1">wrangler secret put SYNC_TOKEN</code>{' '}
-            设置，然后把同一令牌填在这里（仅存本设备，不参与笔记加密）。
-          </p>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <input
-              type="password"
-              value={syncTokenInput}
-              onChange={(e) => setSyncTokenInput(e.target.value)}
-              placeholder={syncTokenSaved ? '已设置，输入新值覆盖' : '粘贴访问令牌'}
-              className="min-w-0 flex-1 rounded-md border border-ink-200 px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
-            />
-            <button
-              onClick={handleSaveSyncToken}
-              disabled={!syncTokenInput.trim()}
-              className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-hover disabled:opacity-50"
-            >
-              保存
-            </button>
-            {syncTokenSaved && (
-              <button
-                onClick={handleClearSyncToken}
-                className="shrink-0 rounded-md border border-ink-200 px-3 py-1.5 text-sm text-ink-600 hover:bg-ink-50"
-              >
-                清除
-              </button>
-            )}
-          </div>
-          <div className="mt-2">
-            <span
-              className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs ${
-                syncTokenSaved ? 'bg-green-100 text-green-700' : 'bg-ink-100 text-ink-400'
-              }`}
-            >
-              {syncTokenSaved ? '已配置' : '未配置'}
-              <Icon name={syncTokenSaved ? 'check' : 'close'} size={12} />
-            </span>
-          </div>
-        </div>
-      </section>
-
-      {/* 零信任登录（多用户） */}
-      <section className="mb-8">
-        <h2 className="mb-3 text-lg font-medium text-ink-900">零信任登录（多用户）</h2>
-        <div className="rounded-lg border border-ink-200 bg-white p-4">
-          <p className="mb-3 text-sm text-ink-600">
-            用本设备已初始化的助记词走零知识挑战应答登录：服务端只验证「你掌握主密钥」，
-            <span className="font-medium text-ink-900">永不接收主密钥或助记词</span>。
-            登录后获得按用户隔离的会话令牌，多人可共享同一部署而互不接触数据。
+            用你的钥匙登录后，笔记会加密同步到云端，多设备可访问。
+            <span className="font-medium text-ink-900">钥匙和助记词永远不会发送给服务器</span>。
           </p>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <button
@@ -382,7 +341,7 @@ export default function SettingsPage() {
               disabled={loginState === 'loading'}
               className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-hover disabled:opacity-50"
             >
-              {loginState === 'loading' ? '登录中…' : '用助记词登录'}
+              {loginState === 'loading' ? '登录中…' : '用钥匙登录'}
             </button>
             {loginState !== 'idle' && (
               <span
@@ -394,7 +353,7 @@ export default function SettingsPage() {
                       : 'bg-ink-100 text-ink-400'
                 }`}
               >
-                  <Icon
+                <Icon
                   name={loginState === 'ok' ? 'check' : loginState === 'error' ? 'close' : 'refresh'}
                   size={12}
                 />
@@ -411,9 +370,6 @@ export default function SettingsPage() {
               {loginMsg}
             </p>
           )}
-          <p className="mt-3 text-xs text-ink-400">
-            提示：单用户部署仍可使用上方「服务端访问令牌」。登录成功后该会话令牌会覆盖本设备存储的令牌。
-          </p>
         </div>
       </section>
 
@@ -422,7 +378,7 @@ export default function SettingsPage() {
         <h2 className="mb-3 text-lg font-medium text-ink-900">AI 配置（自带 Key）</h2>
         <div className="rounded-lg border border-ink-200 bg-white p-4">
           <p className="mb-3 text-sm text-ink-600">
-            填入你自己的 API Key，AI 调用成本由你直接承担，平台不抽成。Key 会用 MASTER_KEY 加密存储。
+            填入你自己的 API Key，AI 调用成本由你直接承担，平台不抽成。Key 会用你的钥匙加密存储。
           </p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <select

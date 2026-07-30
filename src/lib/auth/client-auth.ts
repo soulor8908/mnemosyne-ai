@@ -30,7 +30,7 @@ export interface LoginResult {
 export async function loginWithMnemonic(): Promise<LoginResult> {
   const mnemonic = getCachedMnemonic();
   if (!mnemonic) {
-    throw new Error('本设备尚未初始化助记词，请先创建或恢复保险库');
+    throw new Error('还没创建钥匙，请先在「我的钥匙」里点「显示我的钥匙」生成，或用恢复短语恢复');
   }
   const masterKey = await masterKeyFromMnemonic(mnemonic);
   const userId = await deriveUserId(masterKey);
