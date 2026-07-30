@@ -20,6 +20,8 @@
 | 间隔重复 | FSRS 算法复习卡 | `src/lib/fsrs/` |
 | 导入导出 | Markdown / JSON / HTML 导入导出，数据无锁定 | `src/lib/markdown/export.ts` |
 | 收集箱 | 飞书分享捕获 → inbox 导入 | `src/lib/inbox/` |
+| 引用溯源 + 拒答 | 检索答案按来源编号 `[n]` 标注出处；无任何相关笔记时诚实拒答，绝不调用 LLM 编造 | `src/lib/ai/grounding.ts`、`src/app/recall/` |
+| 网页剪藏 | 服务端抓取 URL 提取正文落库（绕开浏览器 CORS） | `src/app/api/capture/`、`src/app/capture/` |
 
 ## 设计中 / 未实现 📋
 
@@ -27,9 +29,7 @@
 
 - 夜间自动整理 Agent（Cron 触发）——目前 Agent 需在客户端手动触发，链接提议基于余弦相似度而非 LLM
 - R2 大附件存储
-- CI/CD 质量门禁（GitHub Actions / husky）——`npm run quality-gate` 存在但无自动化强制
 - 多用户与真正的 session/nonce 零信任体系（当前为单用户共享令牌）
-- 本地离线 embedding 打包（当前"本地模式"运行时从 CDN 加载 @xenova/transformers）
 
 ## 快速开始
 

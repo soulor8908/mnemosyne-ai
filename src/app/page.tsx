@@ -66,7 +66,10 @@ export default function TodayPage() {
           className="w-full resize-none rounded-lg border border-ink-200 bg-white px-4 py-3 text-ink-900 placeholder-ink-400 focus:border-accent focus:outline-none"
           rows={3}
         />
-        <div className="mt-2 flex justify-end">
+        <div className="mt-2 flex items-center justify-between">
+          <Link href="/capture" className="text-sm text-accent hover:underline">
+            或捕获网页 →
+          </Link>
           <button
             onClick={handleQuickSave}
             disabled={saving || !quickText.trim()}

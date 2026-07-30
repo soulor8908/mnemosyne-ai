@@ -4,6 +4,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { hybridSearch, keywordSearch, type SearchResult } from '@/lib/ai/search';
+import { formatSourcesForPrompt, GROUNDING_REFUSAL } from '@/lib/ai/grounding';
 import { apiFetch } from '@/lib/api/client';
 
 export default function RecallPage() {
@@ -33,10 +34,12 @@ export default function RecallPage() {
       }
       setResults(res);
 
-      // 如果有结果，调用 AI 流式回答
-      if (res.length > 0) {
-        streamAnswer(q, res);
+      // 溯源 + 拒答：无任何相关笔记时，诚实地拒答，绝不调用 LLM 编造
+      if (res.length === 0) {
+        setAnswer(GROUNDING_REFUSAL);
+        return;
       }
+      streamAnswer(q, res);
     } finally {
       setLoading(false);
     }
@@ -46,12 +49,7 @@ export default function RecallPage() {
     setStreaming(true);
     abortRef.current = new AbortController();
 
-    const context = res
-      .map(
-        (r) =>
-          `## ${r.note.title}\n\n${r.note.content.slice(0, 1000)}\n\n(来源ID: ${r.note.id})`
-      )
-      .join('\n\n---\n\n');
+    const context = formatSourcesForPrompt(res);
 
     try {
       const resp = await apiFetch('/api/chat', {
@@ -129,16 +127,26 @@ export default function RecallPage() {
 
       {results.length > 0 && (
         <div>
-          <h2 className="mb-3 text-sm font-medium text-ink-500">相关笔记（{results.length}）</h2>
+          <h2 className="mb-1 text-sm font-medium text-ink-500">
+            引用来源（{results.length}）
+          </h2>
+          <p className="mb-3 text-xs text-ink-400">
+            AI 回答基于以下笔记，可点击核对出处
+          </p>
           <div className="space-y-2">
-            {results.map((r) => (
+            {results.map((r, i) => (
               <Link
                 key={r.note.id}
                 href={`/notes/${r.note.id}`}
                 className="block rounded-lg border border-ink-200 bg-white px-4 py-3 hover:border-accent"
               >
                 <div className="flex items-center justify-between">
-                  <div className="font-medium text-ink-900">{r.note.title}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink-100 text-xs font-medium text-ink-600">
+                      {i + 1}
+                    </span>
+                    <span className="font-medium text-ink-900">{r.note.title}</span>
+                  </div>
                   <span className="text-xs text-ink-400">
                     {r.matchedBy === 'both' ? '关键词+语义' : r.matchedBy === 'semantic' ? '语义' : '关键词'}
                     {' · '}
@@ -154,8 +162,13 @@ export default function RecallPage() {
         </div>
       )}
 
-      {!loading && results.length === 0 && answer === '' && query && (
-        <p className="text-sm text-ink-400">没有找到相关笔记</p>
+      {!loading && results.length === 0 && query && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-4">
+          <p className="text-sm font-medium text-amber-800">未找到相关笔记</p>
+          <p className="mt-1 text-sm text-amber-700">
+            为避免编造，AI 未作答。换个说法，或去「笔记」补充相关内容后再试。
+          </p>
+        </div>
       )}
     </div>
   );
