@@ -19,20 +19,22 @@ const { Buffer } = require('buffer');
 const nativeSubtle = webcrypto.subtle;
 
 // 将任何 BufferSource 转为 Node 原生 ArrayBuffer（通过 Buffer 桥梁）
+// 关键：必须用 Buffer.alloc() 创建全新内存，不能用 Buffer.from(data)——
+// 后者共享原始内存，buf.buffer 仍指向 jsdom realm 的 ArrayBuffer。
 function toNativeArrayBuffer(data: unknown): ArrayBuffer {
+  let source: Uint8Array;
   if (data instanceof ArrayBuffer) {
-    // 用 Buffer.from 复制到 Node 原生 ArrayBuffer
-    const buf = Buffer.from(data);
-    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-  }
-  if (ArrayBuffer.isView(data)) {
+    source = new Uint8Array(data);
+  } else if (ArrayBuffer.isView(data)) {
     const view = data as ArrayBufferView;
-    const buf = Buffer.from(view.buffer as ArrayBuffer, view.byteOffset, view.byteLength);
-    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+    source = new Uint8Array(view.buffer as ArrayBuffer, view.byteOffset, view.byteLength);
+  } else {
+    source = Buffer.from(String(data));
   }
-  // 字符串等其他类型
-  const buf = Buffer.from(String(data));
-  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+  // alloc 创建全新的 Node 原生 Buffer，其 buffer 是 Node 原生 ArrayBuffer
+  const buf = Buffer.alloc(source.byteLength);
+  buf.set(source);
+  return buf.buffer;
 }
 
 // Patch digest：转换 data 参数
