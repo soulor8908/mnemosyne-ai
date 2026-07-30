@@ -1,4 +1,5 @@
 // 夜间 Agent runner（技术设计文档 5.4）
+import { z } from 'zod';
 import { getRecentNotes, getNotesByIds } from '@/lib/db/notes';
 import { createProposal } from '@/lib/db/proposals';
 import { startAgentRun, finishAgentRun } from '@/lib/db/agent-runs';
@@ -23,6 +24,28 @@ export interface RunAgentOptions {
   llmCall?: AgentLLMCall;
   // 服务端运行时必传；客户端运行时仅当 llmCall 缺省时才需要
   env?: Env;
+}
+
+// 复习卡 JSON 解析（Zod 校验，替代正则裸解析 LLM 输出）
+const ReviewCardArraySchema = z.array(
+  z.object({ front: z.string(), back: z.string() })
+);
+
+export interface ParsedReviewCards {
+  cards: Array<{ front: string; back: string }>;
+}
+
+// 从 LLM 自由文本中提取 JSON 数组并校验；失败返回 null（调用方应重试）
+export function parseReviewCards(raw: string): ParsedReviewCards | null {
+  const jsonMatch = raw.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) return null;
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+    const cards = ReviewCardArraySchema.parse(parsed);
+    return { cards };
+  } catch {
+    return null;
+  }
 }
 
 export async function runAgent(opts: RunAgentOptions): Promise<string> {
@@ -87,14 +110,15 @@ export async function runAgent(opts: RunAgentOptions): Promise<string> {
 
     let proposalsCreated = 0;
 
-    // 3. 直接创建高置信度链接提议（无需 LLM，基于向量相似度）
+    // 3. 直接创建高置信度链接提议（无需 LLM，基于向量余弦相似度）
     for (const p of topProposals) {
       const payload: ProposalPayload = {
         srcNoteId: p.srcNote.id,
         dstNoteId: p.dstNote.id,
         confidence: p.confidence,
+        method: 'embedding-cosine',
       };
-      const reason = `《${truncate(p.srcNote.title, 30)}》与《${truncate(p.dstNote.title, 30)}》语义相似度 ${(p.confidence * 100).toFixed(0)}%，建议建立双链。`;
+      const reason = `《${truncate(p.srcNote.title, 30)}》与《${truncate(p.dstNote.title, 30)}》向量余弦相似度 ${(p.confidence * 100).toFixed(0)}%，建议建立双链。`;
       await createProposal({
         type: 'link',
         payload,
@@ -138,24 +162,33 @@ ${truncate(note.content, 1500)}
           temperature: 0.3,
         });
 
-        // 解析 JSON
-        const jsonMatch = response.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          const cards = JSON.parse(jsonMatch[0]) as Array<{ front: string; back: string }>;
-          for (const card of cards.slice(0, 2)) {
-            const payload: ProposalPayload = {
-              noteId: note.id,
-              cards: [card],
-            };
-            await createProposal({
-              type: 'review-card',
-              payload,
-              reason: `从《${truncate(note.title, 30)}》中提取复习卡：${truncate(card.front, 40)}`,
-              confidence: 0.7,
-              agentRunId: run.id,
-            });
-            proposalsCreated++;
+        // 结构化解析：Zod 校验；失败重试一次（报告 P1-2 要求废除正则裸解析）
+        let parsed = parseReviewCards(response);
+        if (!parsed) {
+          const retry = await llmCall(
+            prompt + '\n\n【严格要求】只输出 JSON 数组，不要任何解释或 Markdown 代码块。',
+            { system: '你是复习卡片生成助手，只返回 JSON。', maxTokens: 500, temperature: 0.2 }
+          );
+          parsed = parseReviewCards(retry);
+          if (!parsed) {
+            console.error('[Agent] 复习卡解析重试仍失败，跳过', note.id);
+            continue;
           }
+        }
+
+        for (const card of parsed.cards.slice(0, 2)) {
+          const payload: ProposalPayload = {
+            noteId: note.id,
+            cards: [card],
+          };
+          await createProposal({
+            type: 'review-card',
+            payload,
+            reason: `从《${truncate(note.title, 30)}》中提取复习卡：${truncate(card.front, 40)}`,
+            confidence: 0.7,
+            agentRunId: run.id,
+          });
+          proposalsCreated++;
         }
       } catch (err) {
         // 不再静默吞掉：日志带上错误对象，便于排查

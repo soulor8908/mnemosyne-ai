@@ -7,10 +7,13 @@ let _localEmbedder: any = null;
 
 async function getLocalEmbedder() {
   if (!_localEmbedder) {
-    // 通过 CDN 动态加载 transformers.js，避免打包原生模块到 server bundle
-    // 浏览器端专用，服务端不会调用此函数
-    const moduleName = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
-    const mod = await (Function('m', 'return import(m)')(moduleName));
+    // 本地打包的 transformers.js（依赖已在 package.json 声明，构建期打入浏览器 bundle）
+    // 不再从 CDN 运行时加载——让"隐私模式"名副其实：推理代码不依赖任何外部网络。
+    // 模型权重 Xenova/all-MiniLM-L6-v2 首次仍由 transformers.js 从 HuggingFace 下载，
+    // 并缓存进浏览器 Cache API；缓存后即可完全离线推理。
+    // 注意：next.config.mjs 已将 @xenova/transformers（及 onnxruntime-node）标记为
+    // server external，确保服务端 bundle 不打包原生模块。
+    const mod = await import('@xenova/transformers');
     _localEmbedder = await mod.pipeline(
       'feature-extraction',
       'Xenova/all-MiniLM-L6-v2'

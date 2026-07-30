@@ -55,7 +55,7 @@ async function embedQuery(
 }
 
 // RRF 融合
-function rrfFusion(
+export function rrfFusion(
   listA: string[],
   listB: string[],
   k = 60

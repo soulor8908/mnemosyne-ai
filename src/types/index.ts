@@ -67,6 +67,8 @@ export interface ProposalPayload {
   srcNoteId?: string;
   dstNoteId?: string;
   confidence?: number;
+  // 生成方法（诚实标注）：embedding-cosine = 基于向量余弦相似度（非语义理解）；llm = 大模型生成
+  method?: 'embedding-cosine' | 'llm';
   // merge
   noteIds?: string[];
   newTitle?: string;

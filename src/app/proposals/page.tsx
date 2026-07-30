@@ -121,6 +121,19 @@ export default function ProposalsPage() {
                 <span className="rounded bg-ink-100 px-2 py-0.5 text-xs text-ink-600">
                   {p.type}
                 </span>
+                {p.payload.method === 'embedding-cosine' && (
+                  <span
+                    className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-600"
+                    title="基于笔记向量余弦相似度计算，不代表模型真正理解了语义关联"
+                  >
+                    向量余弦
+                  </span>
+                )}
+                {p.payload.method === 'llm' && (
+                  <span className="rounded bg-purple-50 px-2 py-0.5 text-xs text-purple-600">
+                    LLM 生成
+                  </span>
+                )}
                 <span className="text-xs text-ink-400">
                   置信度 {(p.confidence * 100).toFixed(0)}%
                 </span>
