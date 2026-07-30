@@ -1,0 +1,87 @@
+# Mnemosyne 自托管方案
+# 用法：cp .env.example .env && docker-compose up -d
+#
+# 服务拓扑：
+#   mnemosyne-web:3000  ──►  redis:6379   （会话 / challenge / 审计日志）
+#                       ──►  rerank:8001  （Cross-Encoder 重排）
+#
+# 与 Cloudflare 部署的差异：
+#   - Cloudflare KV  → 本地 Redis（持久化到 docker volume）
+#   - Workers AI     → 不可用，EMBEDDING_MODE=local（384 维，浏览器内推理）
+#   - 同步加密链路保持不变（端到端加密 + 零信任登录）
+
+services:
+  mnemosyne-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mnemosyne-web:local
+    container_name: mnemosyne-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      # 容器内解析：服务间走 docker 网络
+      - REDIS_URL=redis://redis:6379
+      - RERANK_URL=http://rerank:8001
+      - NODE_ENV=production
+    depends_on:
+      redis:
+        condition: service_healthy
+      rerank:
+        condition: service_started
+    networks:
+      - mnemosyne
+
+  redis:
+    image: redis:7-alpine
+    container_name: mnemosyne-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - mnemosyne
+
+  rerank:
+    build:
+      context: ./services/rerank
+      dockerfile: Dockerfile
+    image: mnemosyne-rerank:local
+    container_name: mnemosyne-rerank
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      # HuggingFace 模型缓存卷，加速重建并避免重复下载
+      - rerank-hf-cache:/root/.cache/huggingface
+    networks:
+      - mnemosyne
+
+volumes:
+  redis-data:
+    name: mnemosyne-redis-data
+  rerank-hf-cache:
+    name: mnemosyne-rerank-hf-cache
+
+networks:
+  mnemosyne:
+    name: mnemosyne
+    driver: bridge
