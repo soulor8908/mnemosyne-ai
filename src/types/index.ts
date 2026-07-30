@@ -164,7 +164,11 @@ export type AgentStepType =
   | 'create-proposal'   // 创建提议
   | 'llm-call'          // 调用 LLM
   | 'parse-response'    // 解析 LLM 响应
-  | 'retry-llm';        // 重试 LLM
+  | 'retry-llm'         // 重试 LLM
+  // 多 Agent 协作（Supervisor 模式）的 Agent 级步骤
+  | 'collector'         // Collector Agent：收集候选笔记
+  | 'reviewer'          // Reviewer Agent：质量审查
+  | 'writer';           // Writer Agent：内容产出
 
 export interface AgentTrace {
   id: string;
