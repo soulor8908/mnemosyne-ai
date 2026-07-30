@@ -58,24 +58,48 @@ nativeSubtle.importKey = function (
   return origImportKey(format, keyData, algorithm, extractable, keyUsages);
 };
 
-// Patch encrypt/decrypt：转换 data 参数
+// 递归转换 algorithm 对象里所有 BufferSource 字段为 Node 原生 ArrayBuffer
+// 必修场景：AES-GCM.iv / AES-GCM.additionalData / PBKDF2.salt / HKDF.salt / HKDF.info
+// Node 20 webcrypto 比 Node 24 严格，algorithm 内嵌的 BufferSource 也按 realm 检查。
+function normalizeAlgorithm<T extends AlgorithmIdentifier>(algorithm: T): T {
+  if (!algorithm || typeof algorithm !== 'object') return algorithm;
+  const out: any = { ...(algorithm as any) };
+  // 已知 BufferSource 字段清单
+  const bufferFields = ['iv', 'salt', 'info', 'additionalData', 'public', 'data'] as const;
+  for (const f of bufferFields) {
+    if (out[f] != null && typeof out[f] !== 'string') {
+      out[f] = toNativeArrayBuffer(out[f]);
+    }
+  }
+  return out as T;
+}
+
+// Patch encrypt/decrypt：转换 algorithm 中的 BufferSource 字段 + data 参数
 const origEncrypt = nativeSubtle.encrypt.bind(nativeSubtle);
 nativeSubtle.encrypt = function (algorithm: AlgorithmIdentifier, key: CryptoKey, data: BufferSource) {
-  return origEncrypt(algorithm, key, toNativeArrayBuffer(data) as BufferSource);
+  return origEncrypt(normalizeAlgorithm(algorithm), key, toNativeArrayBuffer(data) as BufferSource);
 };
 
 const origDecrypt = nativeSubtle.decrypt.bind(nativeSubtle);
 nativeSubtle.decrypt = function (algorithm: AlgorithmIdentifier, key: CryptoKey, data: BufferSource) {
-  return origDecrypt(algorithm, key, toNativeArrayBuffer(data) as BufferSource);
+  return origDecrypt(normalizeAlgorithm(algorithm), key, toNativeArrayBuffer(data) as BufferSource);
 };
 
-// Patch deriveKey/deriveBits：转换 salt/info 参数（第二参数）
+// Patch deriveKey/deriveBits：转换 algorithm 中的 salt/info
 const origDeriveBits = nativeSubtle.deriveBits.bind(nativeSubtle);
 nativeSubtle.deriveBits = function (algorithm: AlgorithmIdentifier, baseKey: CryptoKey, length: number) {
-  if (algorithm && typeof algorithm === 'object' && 'salt' in algorithm) {
-    (algorithm as any).salt = toNativeArrayBuffer((algorithm as any).salt);
-  }
-  return origDeriveBits(algorithm, baseKey, length);
+  return origDeriveBits(normalizeAlgorithm(algorithm), baseKey, length);
+};
+
+const origDeriveKey = nativeSubtle.deriveKey.bind(nativeSubtle);
+nativeSubtle.deriveKey = function (
+  algorithm: AlgorithmIdentifier,
+  baseKey: CryptoKey,
+  derivedKeyAlgo: AlgorithmIdentifier,
+  extractable: boolean,
+  keyUsages: KeyUsage[]
+) {
+  return origDeriveKey(normalizeAlgorithm(algorithm), baseKey, derivedKeyAlgo, extractable, keyUsages);
 };
 
 // 强制用 Node 原生 crypto
