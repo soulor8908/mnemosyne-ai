@@ -198,9 +198,6 @@ function buildReport(results: RAGASResult[]): RAGASReport {
 
 // 将报告格式化为 Markdown（便于 commit 到仓库做回归对比）
 export function reportToMarkdown(report: RAGASReport): string {
-  const fmt = (v: { mean: number; min: number; max: number }) =>
-    `mean=${v.mean.toFixed(3)} min=${v.min.toFixed(3)} max=${v.max.toFixed(3)}`;
-
   return `# RAGAS 评估报告
 
 - **评估版本**: ${report.evalVersion}
