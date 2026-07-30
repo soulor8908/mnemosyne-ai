@@ -1,6 +1,6 @@
 // 客户端 API 封装：所有 /api/* 请求统一从这里走，自动附带访问令牌。
-// 令牌 = 服务端 SYNC_TOKEN（wrangler secret），用户在设置页填入一次。
-// 注意：这是"访问令牌"，不是 MASTER_KEY——主密钥永不离开客户端。
+// 令牌可以是：遗留共享令牌 SYNC_TOKEN（单用户）或零信任登录后的会话令牌（多用户）。
+// 由设置页保存；注意：这是"访问令牌"，不是 MASTER_KEY——主密钥永不离开客户端。
 const TOKEN_STORAGE_KEY = 'mnemosyne_sync_token';
 
 export function getSyncToken(): string {

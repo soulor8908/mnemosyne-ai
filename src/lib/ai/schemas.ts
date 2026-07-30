@@ -72,7 +72,6 @@ export const UpdateNoteSchema = z.object({
 
 export const SyncRequestSchema = z.object({
   sinceRev: z.number().int().min(0).optional(),
-  masterKey: z.string().optional(),
 });
 
 export const ReviewRequestSchema = z.object({

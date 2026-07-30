@@ -30,6 +30,7 @@ interface FetcherBinding {
 export interface Env {
   KV: KVNamespace;
   NOTES_DELTA: KVNamespace;
+  AUTH_USERS: KVNamespace;
   AUTH_SESSIONS: KVNamespace;
   AUTH_NONCES: KVNamespace;
   AUTH_AUDIT: KVNamespace;
@@ -37,7 +38,7 @@ export interface Env {
   ASSETS: FetcherBinding;
   AI_PROVIDER: string;
   APP_URL: string;
-  /** API 访问令牌（wrangler secret put SYNC_TOKEN；本地开发写 .dev.vars） */
+  /** 遗留共享访问令牌（单用户/管理态）。多用户登录改用会话令牌，见 guard.ts / zerotrust.ts */
   SYNC_TOKEN?: string;
   DEEPSEEK_API_KEY?: string;
   GLM_API_KEY?: string;
@@ -73,10 +74,10 @@ export async function verifySession(): Promise<string | null> {
   return data.userId;
 }
 
-// 校验 nonce（防重放）
-export async function verifyNonce(nonce: string): Promise<boolean> {
+// 校验 nonce（防重放），按 userId 作用域隔离，避免跨用户碰撞
+export async function verifyNonce(userId: string, nonce: string): Promise<boolean> {
   const env = getEnv();
-  const key = `nonce:${nonce}`;
+  const key = `nonce:${userId}:${nonce}`;
   const existing = await env.AUTH_NONCES.get(key);
   if (existing) return false; // 重放
   await env.AUTH_NONCES.put(key, Date.now().toString(), { expirationTtl: 300 });

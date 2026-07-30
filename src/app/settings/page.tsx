@@ -22,6 +22,7 @@ import {
 } from '@/lib/markdown/export';
 import { ingestInboxFiles } from '@/lib/inbox/ingest';
 import { getSyncToken, setSyncToken } from '@/lib/api/client';
+import { loginWithMnemonic } from '@/lib/auth/client-auth';
 import { downloadBlob } from '@/lib/utils';
 import { Icon } from '@/components/ui/icon';
 import type { ReviewPreset } from '@/types';
@@ -33,6 +34,8 @@ export default function SettingsPage() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [syncTokenInput, setSyncTokenInput] = useState('');
   const [syncTokenSaved, setSyncTokenSaved] = useState(false);
+  const [loginState, setLoginState] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
+  const [loginMsg, setLoginMsg] = useState('');
   const [byokProvider, setByokProvider] = useState<'deepseek' | 'glm' | 'openai'>('deepseek');
   const [byokApiKey, setByokApiKey] = useState('');
   const [byokSaved, setByokSaved] = useState<Record<string, boolean>>({});
@@ -124,6 +127,20 @@ export default function SettingsPage() {
     setSyncToken('');
     setSyncTokenSaved(false);
     showToast('访问令牌已清除');
+  }
+
+  async function handleLogin() {
+    setLoginState('loading');
+    setLoginMsg('');
+    try {
+      const { userId } = await loginWithMnemonic();
+      setLoginState('ok');
+      setLoginMsg(`已登录（零信任会话，用户 ${userId.slice(0, 8)}…）`);
+      showToast('零信任登录成功');
+    } catch (err) {
+      setLoginState('error');
+      setLoginMsg((err as Error).message);
+    }
   }
 
   async function handleExportJson() {
@@ -334,6 +351,56 @@ export default function SettingsPage() {
               <Icon name={syncTokenSaved ? 'check' : 'close'} size={12} />
             </span>
           </div>
+        </div>
+      </section>
+
+      {/* 零信任登录（多用户） */}
+      <section className="mb-8">
+        <h2 className="mb-3 text-lg font-medium text-ink-900">零信任登录（多用户）</h2>
+        <div className="rounded-lg border border-ink-200 bg-white p-4">
+          <p className="mb-3 text-sm text-ink-600">
+            用本设备已初始化的助记词走零知识挑战应答登录：服务端只验证「你掌握主密钥」，
+            <span className="font-medium text-ink-900">永不接收主密钥或助记词</span>。
+            登录后获得按用户隔离的会话令牌，多人可共享同一部署而互不接触数据。
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <button
+              onClick={handleLogin}
+              disabled={loginState === 'loading'}
+              className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              {loginState === 'loading' ? '登录中…' : '用助记词登录'}
+            </button>
+            {loginState !== 'idle' && (
+              <span
+                className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs ${
+                  loginState === 'ok'
+                    ? 'bg-green-100 text-green-700'
+                    : loginState === 'error'
+                      ? 'bg-red-100 text-red-700'
+                      : 'bg-ink-100 text-ink-400'
+                }`}
+              >
+                  <Icon
+                  name={loginState === 'ok' ? 'check' : loginState === 'error' ? 'close' : 'refresh'}
+                  size={12}
+                />
+                {loginState === 'ok' ? '已登录' : loginState === 'error' ? '失败' : '处理中'}
+              </span>
+            )}
+          </div>
+          {loginMsg && (
+            <p
+              className={`mt-2 text-xs ${
+                loginState === 'ok' ? 'text-green-700' : 'text-red-600'
+              }`}
+            >
+              {loginMsg}
+            </p>
+          )}
+          <p className="mt-3 text-xs text-ink-400">
+            提示：单用户部署仍可使用上方「服务端访问令牌」。登录成功后该会话令牌会覆盖本设备存储的令牌。
+          </p>
         </div>
       </section>
 

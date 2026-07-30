@@ -15,7 +15,8 @@
 | 端到端加密 | AES-GCM + PBKDF2（10 万次迭代），云端只见密文 | `src/lib/crypto/` |
 | BIP39 助记词 | 12 词生成/校验（含 checksum）/派生主密钥，换设备恢复 | `src/lib/crypto/index.ts` |
 | 云端同步 | 密文 delta 上传 Cloudflare KV，冲突时保快照标记 | `src/lib/sync/engine.ts` |
-| API 鉴权 | 所有 `/api/*` 走 Bearer 令牌（`SYNC_TOKEN`），fail-closed | `src/lib/auth/guard.ts` |
+| API 鉴权 | 所有 `/api/*` 走 Bearer 令牌；支持遗留共享令牌 `SYNC_TOKEN` 与零信任会话令牌双通道 | `src/lib/auth/guard.ts` |
+| 多用户零信任登录 | 零知识挑战应答登录：服务端只存 `verifier`、永不接收主密钥；会话按用户隔离，KV 读写强校验归属 | `src/lib/auth/zerotrust.ts`、`src/app/api/auth/{start,verify}/` |
 | AI 问答 | 基于笔记上下文的流式对话（DeepSeek/GLM/OpenAI，BYOK 优先） | `src/app/api/chat/` |
 | 间隔重复 | FSRS 算法复习卡 | `src/lib/fsrs/` |
 | 导入导出 | Markdown / JSON / HTML 导入导出，数据无锁定 | `src/lib/markdown/export.ts` |
@@ -29,7 +30,6 @@
 
 - 夜间自动整理 Agent（Cron 触发）——目前 Agent 需在客户端手动触发，链接提议基于余弦相似度而非 LLM
 - R2 大附件存储
-- 多用户与真正的 session/nonce 零信任体系（当前为单用户共享令牌）
 
 ## 快速开始
 
@@ -40,7 +40,12 @@ npm install
 npm run dev
 ```
 
-首次使用：打开 设置 → 「服务端访问令牌」填入与 `SYNC_TOKEN` 相同的值；如需 AI 能力，在「AI 配置」填入自己的 API Key（BYOK，加密存储）。
+首次使用（二选一）：
+
+1. **零信任登录（推荐，多用户）**：设置 → 完成助记词初始化后，点「用助记词登录」。全程不向服务端发送主密钥，登录后获得按用户隔离的会话令牌，多人可共享同一部署而互不接触数据。
+2. **单用户共享令牌**：设置 → 「服务端访问令牌」填入与 `wrangler secret put SYNC_TOKEN` 相同的值。
+
+如需 AI 能力，在「AI 配置」填入自己的 API Key（BYOK，加密存储）。
 
 ## 部署（Cloudflare Workers）
 
@@ -54,7 +59,8 @@ npm run deploy
 
 - **MASTER_KEY 永不离开客户端**：由 12 词 BIP39 助记词派生，仅存内存；服务端与 KV 只见密文。
 - **助记词是唯一恢复手段**：请抄写保存。校验含 BIP39 checksum，错词/乱序会被明确拒绝。
-- **SYNC_TOKEN 是访问令牌**，只控制谁能调用 API，与笔记加密无关。
+- **零信任登录**：服务端只保存 `verifier = H(主密钥)`，无法反推主密钥。登录用挑战应答证明「你掌握主密钥」而非传递它；会话令牌按用户隔离，所有 KV 读写强校验归属，杜绝跨用户读写。
+- **SYNC_TOKEN 是遗留共享访问令牌**，只控制谁能调用 API，与笔记加密无关；单用户部署仍可用。
 - 历史提交曾泄漏 KV namespace id（非凭证，风险低）；介意者可重建 namespace，模板见 `wrangler.toml.example`。
 
 ## 技术栈

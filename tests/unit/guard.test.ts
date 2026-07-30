@@ -1,13 +1,13 @@
-// API 鉴权守卫测试：锁定"fail-closed + Bearer 校验"行为
+// API 鉴权守卫测试：锁定"无效令牌拒绝 + 会话/遗留令牌双通道"行为
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // mock 掉 Cloudflare context，直接控制 env
-const mockEnv: { SYNC_TOKEN?: string } = {};
-vi.mock('@/lib/auth/session', () => ({
-  getEnv: () => mockEnv,
+const mockEnv: any = { SYNC_TOKEN: undefined, AUTH_SESSIONS: { get: async () => null } };
+vi.mock('@opennextjs/cloudflare', () => ({
+  getCloudflareContext: () => ({ env: mockEnv }),
 }));
 
-import { requireAuth } from '@/lib/auth/guard';
+import { requireAuth, resolveAuth } from '@/lib/auth/guard';
 
 function makeReq(authHeader?: string): Request {
   const headers = new Headers();
@@ -15,15 +15,15 @@ function makeReq(authHeader?: string): Request {
   return new Request('http://localhost/api/test', { method: 'POST', headers });
 }
 
-describe('requireAuth', () => {
+describe('requireAuth / resolveAuth', () => {
   beforeEach(() => {
-    delete mockEnv.SYNC_TOKEN;
+    mockEnv.SYNC_TOKEN = undefined;
   });
 
-  it('未配置 SYNC_TOKEN 时 fail-closed（503），绝不放行', async () => {
+  it('零信任模式下无令牌/无效令牌一律 401（服务不裸奔，但始终要求鉴权而非 503）', async () => {
     const res = await requireAuth(makeReq('Bearer anything'));
     expect(res).not.toBeNull();
-    expect(res!.status).toBe(503);
+    expect(res!.status).toBe(401);
   });
 
   it('缺少 Authorization header 时返回 401', async () => {
@@ -47,7 +47,7 @@ describe('requireAuth', () => {
     expect(res!.status).toBe(401);
   });
 
-  it('令牌正确时放行（返回 null）', async () => {
+  it('遗留令牌正确时放行（返回 null）', async () => {
     mockEnv.SYNC_TOKEN = 'top-secret';
     const res = await requireAuth(makeReq('Bearer top-secret'));
     expect(res).toBeNull();
@@ -57,5 +57,13 @@ describe('requireAuth', () => {
     mockEnv.SYNC_TOKEN = 'top-secret';
     const res = await requireAuth(makeReq('Bearer  top-secret '));
     expect(res).toBeNull();
+  });
+
+  it('resolveAuth 返回 userId：遗留令牌映射到 local', async () => {
+    mockEnv.SYNC_TOKEN = 'top-secret';
+    const r = await resolveAuth(makeReq('Bearer top-secret'));
+    expect(r.err).toBeNull();
+    expect(r.userId).toBe('local');
+    expect(r.legacy).toBe(true);
   });
 });

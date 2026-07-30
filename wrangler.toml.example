@@ -1,8 +1,8 @@
 # Cloudflare Workers 配置模板（OpenNext adapter）
 # 使用方法：
 #   1. cp wrangler.toml.example wrangler.toml   （wrangler.toml 已 gitignore，不会被提交）
-#   2. 用 `wrangler kv namespace create <NAME>` 创建 5 个 KV namespace，把真实 id 填进来
-#   3. `wrangler secret put SYNC_TOKEN` 设置 API 访问令牌（应用设置页需填同一令牌）
+#   2. 用 `wrangler kv namespace create <NAME>` 创建 6 个 KV namespace（KV / NOTES_DELTA / AUTH_USERS / AUTH_SESSIONS / AUTH_NONCES / AUTH_AUDIT），把真实 id 填进来
+#   3. `wrangler secret put SYNC_TOKEN` 设置 API 访问令牌（单用户/管理态；多用户用零信任登录则非必需）
 #   4. 部署：npm run deploy
 #
 # 安全说明：历史版本曾把真实 KV namespace id 与 workers.dev 子域提交进仓库。
@@ -26,6 +26,11 @@ id = "<YOUR_KV_NAMESPACE_ID>"
 [[kv_namespaces]]
 binding = "NOTES_DELTA"
 id = "<YOUR_NOTES_DELTA_NAMESPACE_ID>"
+
+# 零信任用户表（只存 verifier，不存主密钥）
+[[kv_namespaces]]
+binding = "AUTH_USERS"
+id = "<YOUR_AUTH_USERS_NAMESPACE_ID>"
 
 # 零信任 session 三件套
 [[kv_namespaces]]
