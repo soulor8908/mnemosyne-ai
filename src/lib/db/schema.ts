@@ -6,6 +6,7 @@ import type {
   ReviewCard,
   Snapshot,
   AgentRun,
+  AgentTrace,
   EmbeddingRecord,
   Folder,
   UserPrefs,
@@ -19,6 +20,7 @@ export class MnemosyneDB extends Dexie {
   reviewCards!: Table<ReviewCard, string>;
   snapshots!: Table<Snapshot, string>;
   agentRuns!: Table<AgentRun, string>;
+  agentTraces!: Table<AgentTrace, string>;
   embeddings!: Table<EmbeddingRecord, string>;
   folders!: Table<Folder, string>;
   userPrefs!: Table<UserPrefs, string>;
@@ -46,6 +48,20 @@ export class MnemosyneDB extends Dexie {
       reviewCards: 'id, noteId, preset, nextReviewAt, lastReviewAt',
       snapshots: 'id, noteId, createdAt',
       agentRuns: 'id, startedAt, trigger, status',
+      embeddings: 'noteId, model, contentHash, generatedAt',
+      folders: 'id, name, parentId, createdAt, updatedAt',
+      userPrefs: 'id',
+      attachments: 'id, noteId, isImage, createdAt',
+    });
+    // v3: 加 agentTraces 表（可观测性轨迹追踪）
+    this.version(3).stores({
+      notes: 'id, title, folderId, status, source, createdAt, updatedAt, accessedAt, syncStatus, pinned, order, *tags',
+      bilinks: 'id, srcNoteId, dstNoteId, type, createdAt',
+      proposals: 'id, type, status, createdAt, agentRunId',
+      reviewCards: 'id, noteId, preset, nextReviewAt, lastReviewAt',
+      snapshots: 'id, noteId, createdAt',
+      agentRuns: 'id, startedAt, trigger, status',
+      agentTraces: 'id, runId, step, status, startedAt',
       embeddings: 'noteId, model, contentHash, generatedAt',
       folders: 'id, name, parentId, createdAt, updatedAt',
       userPrefs: 'id',

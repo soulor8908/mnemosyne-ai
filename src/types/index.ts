@@ -150,6 +150,42 @@ export interface AgentRun {
   error?: string;
 }
 
+// Agent 轨迹追踪（可观测性）
+// 每次 runAgent 执行时记录一系列 step，用于：
+//   - 复盘失败模式（哪个 step 出错、什么类型错误）
+//   - 性能分析（哪个 step 慢、token 消耗分布）
+//   - 回归对比（改 prompt/参数后某 step 的成功率变化）
+export type AgentStepStatus = 'success' | 'failed' | 'skipped';
+
+export type AgentStepType =
+  | 'load-notes'        // 加载笔记
+  | 'compute-similarity'// 计算嵌入相似度
+  | 'check-bilink'      // 检查已有双链
+  | 'create-proposal'   // 创建提议
+  | 'llm-call'          // 调用 LLM
+  | 'parse-response'    // 解析 LLM 响应
+  | 'retry-llm';        // 重试 LLM
+
+export interface AgentTrace {
+  id: string;
+  runId: string;            // 关联 AgentRun.id
+  step: AgentStepType;      // 步骤类型
+  status: AgentStepStatus;  // 步骤结果
+  startedAt: number;        // 开始时间戳
+  durationMs: number;       // 耗时毫秒
+  // 上下文元数据（按 step 类型携带不同字段）
+  meta?: {
+    noteId?: string;        // 处理的笔记 ID
+    proposalId?: string;    // 创建的提议 ID
+    confidence?: number;    // 双链置信度
+    attempt?: number;       // LLM 调用次数（含重试）
+    tokensUsed?: number;    // token 消耗
+    errorType?: string;     // 失败时的错误类型
+    errorMessage?: string;  // 失败时的错误信息
+    [k: string]: unknown;
+  };
+}
+
 export type EmbeddingModel = 'bge-base-en-v1.5' | 'local-mini';
 export type EmbeddingMode = 'local' | 'cloud';
 
