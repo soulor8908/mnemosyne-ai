@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { SyncRequestSchema } from '@/lib/ai/schemas';
 import { getEnv } from '@/lib/auth/session';
+import { requireAuth } from '@/lib/auth/guard';
 
 // MVP 阶段单用户，后续扩展多用户时改为从 session 解析
 const USER_ID = 'local';
@@ -24,6 +25,8 @@ const PutBodySchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
+    const denied = await requireAuth(req);
+    if (denied) return denied;
     const env = getEnv();
     const body = await req.json();
     const parsed = SyncRequestSchema.parse(body);
@@ -53,6 +56,8 @@ export async function POST(req: NextRequest) {
 // 获取单个 delta 内容
 export async function GET(req: NextRequest) {
   try {
+    const denied = await requireAuth(req);
+    if (denied) return denied;
     const env = getEnv();
     const url = new URL(req.url);
     const key = url.searchParams.get('key');
@@ -82,6 +87,8 @@ export async function GET(req: NextRequest) {
 // 上传单条 delta
 export async function PUT(req: NextRequest) {
   try {
+    const denied = await requireAuth(req);
+    if (denied) return denied;
     const env = getEnv();
     const body = await req.json();
     // zod 严格校验：key 形状 + value 非空 + ttl（可选）

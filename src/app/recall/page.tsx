@@ -4,6 +4,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { hybridSearch, keywordSearch, type SearchResult } from '@/lib/ai/search';
+import { apiFetch } from '@/lib/api/client';
 
 export default function RecallPage() {
   const [query, setQuery] = useState('');
@@ -53,7 +54,7 @@ export default function RecallPage() {
       .join('\n\n---\n\n');
 
     try {
-      const resp = await fetch('/api/chat', {
+      const resp = await apiFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

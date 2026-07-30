@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { listProposals, decideProposal } from '@/lib/db/proposals';
 import { applyProposal, runAgent } from '@/lib/ai/agent/runner';
+import { apiFetch } from '@/lib/api/client';
 import type { Proposal } from '@/types';
 
 // 客户端 LLM 调用：通过 /api/chat 路由，服务端用 BYOK Key 或 Trial 模式调用大模型
@@ -14,7 +15,7 @@ async function clientLLMCall(
   prompt: string,
   opts: { system?: string; maxTokens?: number; temperature?: number }
 ): Promise<string> {
-  const res = await fetch('/api/chat', {
+  const res = await apiFetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

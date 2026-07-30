@@ -1,0 +1,57 @@
+# Cloudflare Workers 配置模板（OpenNext adapter）
+# 使用方法：
+#   1. cp wrangler.toml.example wrangler.toml   （wrangler.toml 已 gitignore，不会被提交）
+#   2. 用 `wrangler kv namespace create <NAME>` 创建 5 个 KV namespace，把真实 id 填进来
+#   3. `wrangler secret put SYNC_TOKEN` 设置 API 访问令牌（应用设置页需填同一令牌）
+#   4. 部署：npm run deploy
+#
+# 安全说明：历史版本曾把真实 KV namespace id 与 workers.dev 子域提交进仓库。
+# namespace id 本身不是凭证（无 API Token 无法访问），但属于不必要的信息暴露，
+# 已改为本模板 + 本地 wrangler.toml 的方式。若介意历史泄漏，可重建 KV namespace。
+name = "mnemosyne"
+main = ".open-next/worker.js"
+compatibility_date = "2024-12-30"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+# 主数据 KV
+[[kv_namespaces]]
+binding = "KV"
+id = "<YOUR_KV_NAMESPACE_ID>"
+
+# 笔记 delta KV
+[[kv_namespaces]]
+binding = "NOTES_DELTA"
+id = "<YOUR_NOTES_DELTA_NAMESPACE_ID>"
+
+# 零信任 session 三件套
+[[kv_namespaces]]
+binding = "AUTH_SESSIONS"
+id = "<YOUR_AUTH_SESSIONS_NAMESPACE_ID>"
+
+[[kv_namespaces]]
+binding = "AUTH_NONCES"
+id = "<YOUR_AUTH_NONCES_NAMESPACE_ID>"
+
+[[kv_namespaces]]
+binding = "AUTH_AUDIT"
+id = "<YOUR_AUTH_AUDIT_NAMESPACE_ID>"
+
+# Workers AI
+[ai]
+binding = "AI"
+
+[vars]
+AI_PROVIDER = "deepseek"
+APP_URL = "https://<your-worker>.<your-subdomain>.workers.dev"
+
+# 密钥通过 `wrangler secret put <NAME>` 上传（本地开发写 .dev.vars）：
+# - SYNC_TOKEN        : API 访问令牌（必需，所有 /api/* 路由的 Bearer 鉴权）
+# - DEEPSEEK_API_KEY  : 平台 Trial 用（可选）
+# - GLM_API_KEY       : 平台 Trial 用（可选）
+# 注意：MASTER_KEY 永不上传服务端。
+# 它由浏览器端生成 12 词 BIP39 助记词并派生，仅存于用户设备内存，
+# 换设备时凭助记词恢复。详见 docs/TECHNICAL_DESIGN.md 7.1 节。

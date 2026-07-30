@@ -13,3 +13,8 @@ test-results/
 playwright-report/
 coverage/
 *.zip
+
+# 本地部署配置（含真实 KV id），用 wrangler.toml.example 生成
+wrangler.toml
+.dev.vars
+tsconfig.tsbuildinfo

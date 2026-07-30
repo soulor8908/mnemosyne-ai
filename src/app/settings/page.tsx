@@ -21,6 +21,7 @@ import {
   type ImportResult,
 } from '@/lib/markdown/export';
 import { ingestInboxFiles } from '@/lib/inbox/ingest';
+import { getSyncToken, setSyncToken } from '@/lib/api/client';
 import { downloadBlob } from '@/lib/utils';
 import { Icon } from '@/components/ui/icon';
 import type { ReviewPreset } from '@/types';
@@ -30,6 +31,8 @@ export default function SettingsPage() {
   const [inputMnemonic, setInputMnemonic] = useState('');
   const [showMnemonic, setShowMnemonic] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [syncTokenInput, setSyncTokenInput] = useState('');
+  const [syncTokenSaved, setSyncTokenSaved] = useState(false);
   const [byokProvider, setByokProvider] = useState<'deepseek' | 'glm' | 'openai'>('deepseek');
   const [byokApiKey, setByokApiKey] = useState('');
   const [byokSaved, setByokSaved] = useState<Record<string, boolean>>({});
@@ -52,6 +55,9 @@ export default function SettingsPage() {
     // 仅当用户之前已生成过（内存缓存仍在）时回填助记词到 UI。
     const cached = getCachedMnemonic();
     if (cached) setMnemonicState(cached);
+
+    // 回填访问令牌状态（不回显明文）
+    setSyncTokenSaved(!!getSyncToken());
 
     const prefs = await getOrCreateUserPrefs();
     setFsrsPresetState(prefs.fsrsPreset);
@@ -104,6 +110,20 @@ export default function SettingsPage() {
     setByokApiKey('');
     setByokSaved((prev) => ({ ...prev, [byokProvider]: true }));
     showToast(`${byokProvider} API Key 已加密保存`);
+  }
+
+  function handleSaveSyncToken() {
+    if (!syncTokenInput.trim()) return;
+    setSyncToken(syncTokenInput.trim());
+    setSyncTokenInput('');
+    setSyncTokenSaved(true);
+    showToast('访问令牌已保存到本设备');
+  }
+
+  function handleClearSyncToken() {
+    setSyncToken('');
+    setSyncTokenSaved(false);
+    showToast('访问令牌已清除');
   }
 
   async function handleExportJson() {
@@ -269,6 +289,52 @@ export default function SettingsPage() {
             </div>
           </div>
         )}
+      </section>
+
+      {/* 服务端访问令牌 */}
+      <section className="mb-8">
+        <h2 className="mb-3 text-lg font-medium text-ink-900">服务端访问令牌</h2>
+        <div className="rounded-lg border border-ink-200 bg-white p-4">
+          <p className="mb-3 text-sm text-ink-600">
+            所有云端能力（AI 对话、云端嵌入、同步）都需要访问令牌。部署时通过{' '}
+            <code className="rounded bg-ink-100 px-1">wrangler secret put SYNC_TOKEN</code>{' '}
+            设置，然后把同一令牌填在这里（仅存本设备，不参与笔记加密）。
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              type="password"
+              value={syncTokenInput}
+              onChange={(e) => setSyncTokenInput(e.target.value)}
+              placeholder={syncTokenSaved ? '已设置，输入新值覆盖' : '粘贴访问令牌'}
+              className="min-w-0 flex-1 rounded-md border border-ink-200 px-3 py-1.5 text-sm focus:border-accent focus:outline-none"
+            />
+            <button
+              onClick={handleSaveSyncToken}
+              disabled={!syncTokenInput.trim()}
+              className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              保存
+            </button>
+            {syncTokenSaved && (
+              <button
+                onClick={handleClearSyncToken}
+                className="shrink-0 rounded-md border border-ink-200 px-3 py-1.5 text-sm text-ink-600 hover:bg-ink-50"
+              >
+                清除
+              </button>
+            )}
+          </div>
+          <div className="mt-2">
+            <span
+              className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs ${
+                syncTokenSaved ? 'bg-green-100 text-green-700' : 'bg-ink-100 text-ink-400'
+              }`}
+            >
+              {syncTokenSaved ? '已配置' : '未配置'}
+              <Icon name={syncTokenSaved ? 'check' : 'close'} size={12} />
+            </span>
+          </div>
+        </div>
       </section>
 
       {/* AI BYOK */}

@@ -3,10 +3,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SearchRequestSchema } from '@/lib/ai/schemas';
 import { getEnv } from '@/lib/auth/session';
-
+import { requireAuth } from '@/lib/auth/guard';
 
 export async function POST(req: NextRequest) {
   try {
+    const denied = await requireAuth(req);
+    if (denied) return denied;
     const env = getEnv();
     const body = await req.json();
     const { query } = SearchRequestSchema.parse(body);

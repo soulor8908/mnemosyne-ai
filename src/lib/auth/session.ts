@@ -6,7 +6,9 @@ import { nanoid } from 'nanoid';
 import { sha256 } from '@/lib/utils';
 
 const SESSION_COOKIE = 'mnemosyne_session';
-const MASTER_KEY_HEADER = 'x-mnemosyne-key';
+// 安全修复说明：曾定义 x-mnemosyne-key header 用于客户端向服务端"透传"MASTER_KEY，
+// 这与"主密钥永不离开客户端"的端到端加密承诺直接冲突，且从未被调用。
+// 已彻底删除该通道；服务端鉴权改用 SYNC_TOKEN Bearer 令牌（见 guard.ts）。
 
 // Cloudflare 环境类型（最小定义，避免依赖 @cloudflare/workers-types）
 interface KVNamespace {
@@ -35,7 +37,8 @@ export interface Env {
   ASSETS: FetcherBinding;
   AI_PROVIDER: string;
   APP_URL: string;
-  MASTER_KEY?: string;
+  /** API 访问令牌（wrangler secret put SYNC_TOKEN；本地开发写 .dev.vars） */
+  SYNC_TOKEN?: string;
   DEEPSEEK_API_KEY?: string;
   GLM_API_KEY?: string;
 }
@@ -43,11 +46,6 @@ export interface Env {
 export function getEnv(): Env {
   const ctx = getCloudflareContext();
   return ctx.env as unknown as Env;
-}
-
-// 从请求获取 master key（客户端透传）
-export function getMasterKeyFromRequest(req: Request): string | null {
-  return req.headers.get(MASTER_KEY_HEADER);
 }
 
 // 建立 session（首次使用）
@@ -98,10 +96,6 @@ export async function audit(userId: string, event: string, meta?: Record<string,
 
 export function setSessionCookie(sessionId: string): string {
   return `${SESSION_COOKIE}=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${7 * 24 * 3600}`;
-}
-
-export function getMasterKeyHeaderName(): string {
-  return MASTER_KEY_HEADER;
 }
 
 export { sha256 };

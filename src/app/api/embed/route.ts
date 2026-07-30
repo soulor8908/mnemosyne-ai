@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getEnv } from '@/lib/auth/session';
-
+import { requireAuth } from '@/lib/auth/guard';
 
 const EmbedSchema = z.object({
   text: z.string().min(1).max(5000),
@@ -10,6 +10,8 @@ const EmbedSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
+    const denied = await requireAuth(req);
+    if (denied) return denied;
     const env = getEnv();
     const body = await req.json();
     const { text } = EmbedSchema.parse(body);

@@ -40,7 +40,9 @@ describe('inbox parser', () => {
     });
 
     it('支持 CRLF 行尾（Windows / 飞书导出兼容）', () => {
-      const crlfContent = sampleContent.replace(/\n/g, '\r\n');
+      // 注意：Windows 上 git autocrlf 检出的 fixture 可能已是 CRLF，
+      // 直接 \n→\r\n 会产生 \r\r\n。先归一化为 LF 再转 CRLF，保证平台无关。
+      const crlfContent = sampleContent.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n');
       const parsed = parseInboxFile(crlfContent);
       expect(parsed).not.toBeNull();
       expect(parsed!.frontmatter.title).toBe('AI 时代的知识管理：从收集到内化');

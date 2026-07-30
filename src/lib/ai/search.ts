@@ -4,6 +4,7 @@ import { searchNotesByKeyword } from '@/lib/db/notes';
 import { getAllEmbeddings } from '@/lib/db/embeddings';
 import { cosineSimilarity } from '@/lib/utils';
 import { embedLocal, resolveEmbedMode } from './embed';
+import { apiFetch } from '@/lib/api/client';
 import type { EmbeddingMode } from '@/types';
 import type { Note } from '@/types';
 
@@ -16,7 +17,7 @@ export interface SearchResult {
 // 通过 /api/embed 获取云端嵌入（与笔记存储时的 bge-base-en-v1.5 同模型同维度）
 // 修复要点：query 嵌入必须与存储嵌入同维度，否则 cosineSimilarity 恒为 0
 async function embedQueryCloud(text: string): Promise<{ vector: number[]; model: string }> {
-  const res = await fetch('/api/embed', {
+  const res = await apiFetch('/api/embed', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
