@@ -136,6 +136,31 @@ describe('MnemosyneClient（服务端可达端点）', () => {
     expect(r.localMatches![0].id).toBe('a');
     expect(r.localMatches![0].snippet).toContain('Rust');
   });
+
+  it('searchNotes：远程向量失败时降级——本地检索照常，remoteError 记录原因', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'AI binding 不可用' }),
+      text: async () => JSON.stringify({ error: 'AI binding 不可用' }),
+    });
+    const fakeNotes: ExportNote[] = [
+      { id: 'a', title: 'Rust 入门', content: 'Rust 的所有权与生命周期。' },
+    ];
+    const client = new MnemosyneClient({
+      baseUrl: 'http://localhost:3000',
+      token: 't',
+      fetchImpl: fetchMock as any,
+      notesExportPath: '/tmp/fake-export.json',
+      readExport: async () => fakeNotes,
+    });
+    const r = await client.searchNotes('Rust');
+    expect(r.queryVector).toEqual([]);
+    expect(r.model).toBe('unavailable');
+    expect(r.remoteError).toBe('AI binding 不可用');
+    expect(r.localMatches!.length).toBe(1);
+    expect(r.localMatches![0].id).toBe('a');
+  });
 });
 
 describe('本地导出检索（纯函数）', () => {

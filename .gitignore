@@ -18,3 +18,5 @@ coverage/
 wrangler.toml
 .dev.vars
 tsconfig.tsbuildinfo
+.local/
+.mcp.json

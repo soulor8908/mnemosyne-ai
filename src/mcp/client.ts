@@ -73,10 +73,13 @@ export interface LocalMatch {
 }
 
 export interface SearchNotesResult {
+  /** 远程向量不可用（离线等）时为空数组 */
   queryVector: number[];
   model: string;
   /** 仅当配置了本地导出文件时返回 */
   localMatches?: LocalMatch[];
+  /** 远程向量获取失败时的原因（本地检索不受影响） */
+  remoteError?: string;
   note: string;
 }
 
@@ -174,9 +177,19 @@ export class MnemosyneClient {
   /**
    * 综合检索：远程返回 queryVector（供客户端语义匹配），
    * 若配置了本地导出文件，额外在导出的明文笔记上做关键词检索。
+   * 远程向量失败（离线 / Workers AI 不可用）不影响本地检索——降级而非放弃。
    */
   async searchNotes(query: string, topK = 5): Promise<SearchNotesResult> {
-    const { queryVector, model } = await this.search(query);
+    let queryVector: number[] = [];
+    let model = 'unavailable';
+    let remoteError: string | undefined;
+    try {
+      const remote = await this.search(query);
+      queryVector = remote.queryVector;
+      model = remote.model;
+    } catch (err) {
+      remoteError = err instanceof Error ? err.message : String(err);
+    }
     let localMatches: LocalMatch[] | undefined;
     if (this.notesExportPath) {
       const notes = await this.readExport(this.notesExportPath);
@@ -186,6 +199,7 @@ export class MnemosyneClient {
       queryVector,
       model,
       localMatches,
+      remoteError,
       note:
         '真实笔记匹配在客户端进行（端到端加密，服务端只见密文）。remote 仅返回 queryVector；' +
         '若配置了本地导出文件，则额外在导出的明文笔记上做关键词检索（数据不出本机）。',
