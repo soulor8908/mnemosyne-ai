@@ -17,9 +17,6 @@ const EMBED_MODEL_ID = 'Xenova/all-MiniLM-L6-v2';
 // 补全模型 ID（distilgpt2）
 const COMPLETE_MODEL_ID = 'Xenova/distilgpt2';
 
-// 嵌入向量维度（all-MiniLM-L6-v2 输出）
-const EMBED_DIM = 384;
-
 // 单个 benchmark 任务的统计结果
 export interface TaskStat {
   task: string; // 任务名（如 'embed-single', 'embed-batch-10', 'complete-50-tokens'）
@@ -167,7 +164,7 @@ function computeStats(latencies: number[]): { mean: number; p95: number } {
 async function warmup(
   embedPipeline: any,
   completePipeline: any,
-  device: InferenceDevice
+  _device: InferenceDevice
 ): Promise<void> {
   try {
     await embedPipeline(SAMPLE_TEXTS[0], { pooling: 'mean', normalize: true });

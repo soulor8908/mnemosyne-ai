@@ -180,7 +180,6 @@ export class HNSWIndex {
 
     // 从顶层搜索到 level+1 层，每层找最近入口
     let entryPoints = [this.entryPointId];
-    const entryNode = this.nodes.get(this.entryPointId)!;
 
     // 从最高层到 level+1 层：贪心找最近
     for (let l = this.maxLevel; l > level; l--) {

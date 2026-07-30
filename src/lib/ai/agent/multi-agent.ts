@@ -59,7 +59,8 @@ const REVIEW_CARD_NOTE_LIMIT = 5; // Writer 最多为多少条 settled 笔记生
 
 // ---- Collector Agent ----
 // 加载近7日笔记 + 计算嵌入余弦相似度，输出候选关联对列表
-async function runCollector(runId: string): Promise<CollectorOutput> {
+// runId 预留用于 trace 关联（Supervisor 层统一记录）
+async function runCollector(_runId: string): Promise<CollectorOutput> {
   const recentNotes = await getRecentNotes(7);
   if (recentNotes.length === 0) {
     return { candidates: [], recentNotes: [] };
