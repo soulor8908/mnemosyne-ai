@@ -29,7 +29,10 @@ export function fnv1aHash(str: string): string {
 
 // SHA-256（Web Crypto API，浏览器与 Workers 都支持）
 export async function sha256(text: string): Promise<string> {
-  const data = new TextEncoder().encode(text);
+  const encoded = new TextEncoder().encode(text);
+  // 复制到当前 realm 的 ArrayBuffer，避免 jsdom + Node webcrypto 跨 realm 问题
+  const data = new ArrayBuffer(encoded.byteLength);
+  new Uint8Array(data).set(encoded);
   const hash = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(hash))
     .map((b) => b.toString(16).padStart(2, '0'))

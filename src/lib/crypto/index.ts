@@ -8,9 +8,14 @@ if (!subtle) {
   throw new Error('crypto.subtle is required but not available');
 }
 
-// BufferSource 兼容：强制转为 ArrayBuffer
+// BufferSource 兼容：强制转为当前 realm 的 ArrayBuffer
+// 不能用 bytes.buffer.slice()——在 jsdom + Node webcrypto 跨 realm 时
+// 返回的 buffer 可能不是当前 realm 的 ArrayBuffer，导致 webcrypto 拒绝。
+// 必须新建 ArrayBuffer 并复制数据。
 function toBufferSource(bytes: Uint8Array): ArrayBuffer {
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  const ab = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(ab).set(bytes);
+  return ab;
 }
 
 // 从密码派生 AES-GCM 密钥
