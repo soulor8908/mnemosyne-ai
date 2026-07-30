@@ -1,0 +1,336 @@
+openapi: 3.1.0
+info:
+  title: Mnemosyne AI API
+  version: 0.1.0
+  description: |
+    Mnemosyne AI 是一个 local-first、端到端加密的 AI 云笔记的开放 API。
+    本规范文档化所有已实现的 REST 端点，供外部工具（如 MCP 服务器、CLI、第三方集成）调用。
+
+    ## 端到端加密边界（重要）
+    - 笔记明文只存在于用户浏览器（IndexedDB），云端 KV 仅保存 AES-GCM 密文。
+    - 因此**服务端无法检索或读取笔记内容**：`/api/search` 仅返回 queryVector，
+      真实的关键词 + 向量 + RRF 融合匹配在客户端进行。
+    - 可在本机用「导出 JSON」配合本地工具做明文检索（数据不出本机），不解密任何云端内容。
+  license:
+    name: MIT
+servers:
+  - url: https://your-deployment.workers.dev
+    description: 你的 Cloudflare Workers 部署地址
+  - url: http://localhost:3000
+    description: 本地开发服务器
+security:
+  - bearerAuth: []
+tags:
+  - name: AI
+  - name: Sync
+  - name: Auth
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        Bearer 令牌，二选一：
+        - 遗留共享令牌 `SYNC_TOKEN`（单用户/管理态，服务端比对 sha256）
+        - 零信任会话令牌（多用户登录后签发，按用户隔离，见 /api/auth/start、/api/auth/verify）
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    Note:
+      type: object
+      description: 笔记（明文形态；同步到云端时为密文）
+      properties:
+        id: { type: string }
+        title: { type: string }
+        content: { type: string }
+        tags: { type: array, items: { type: string } }
+        source:
+          type: string
+          enum: [manual, clip, voice, bot, email, import, feishu, web]
+        sourceMeta:
+          type: object
+          properties:
+            url: { type: string }
+            capturedAt: { type: integer }
+        createdAt: { type: integer }
+        updatedAt: { type: integer }
+      required: [id, title, content]
+    EmbedRequest:
+      type: object
+      properties:
+        text: { type: string, minLength: 1, maxLength: 5000 }
+      required: [text]
+    EmbedResponse:
+      type: object
+      properties:
+        vector: { type: array, items: { type: number } }
+        model: { type: string }
+        dim: { type: integer }
+      required: [vector, model, dim]
+    SearchRequest:
+      type: object
+      properties:
+        query: { type: string, minLength: 1 }
+      required: [query]
+    SearchResponse:
+      type: object
+      properties:
+        queryVector: { type: array, items: { type: number } }
+        model: { type: string }
+      required: [queryVector, model]
+    ChatMessage:
+      type: object
+      properties:
+        role: { type: string, enum: [system, user, assistant] }
+        content: { type: string }
+      required: [role, content]
+    ChatRequest:
+      type: object
+      description: 基于笔记上下文的问答。context 为空时服务端诚实拒答。
+      properties:
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/ChatMessage' }
+        context:
+          type: string
+          description: 调用方提供的笔记摘录，[n] 编号由调用方约定
+        byokKey: { type: string }
+        provider:
+          type: string
+          enum: [deepseek, glm, openai]
+      required: [messages]
+    CaptureRequest:
+      type: object
+      properties:
+        url:
+          type: string
+          pattern: '^https?://'
+      required: [url]
+    CaptureResponse:
+      type: object
+      properties:
+        title: { type: string }
+        content: { type: string }
+        url: { type: string }
+        capturedAt: { type: integer }
+      required: [title, content, url, capturedAt]
+    AuthStartRequest:
+      type: object
+      properties:
+        userId: { type: string }
+      required: [userId]
+    AuthStartResponse:
+      type: object
+      properties:
+        challenge: { type: string }
+        salt: { type: string }
+    AuthVerifyRequest:
+      type: object
+      properties:
+        userId: { type: string }
+        challenge: { type: string }
+        proof: { type: string }
+      required: [userId, challenge, proof]
+    AuthVerifyResponse:
+      type: object
+      properties:
+        token: { type: string }
+        userId: { type: string }
+    SyncPutBody:
+      type: object
+      properties:
+        key:
+          type: string
+          pattern: '^u:[A-Za-z0-9_-]+:delta:[A-Za-z0-9_-]+:[0-9]+$'
+        value: { type: string, minLength: 1 }
+        ttl: { type: integer }
+        nonce: { type: string, minLength: 8, maxLength: 128 }
+      required: [key, value]
+    SyncListResponse:
+      type: object
+      properties:
+        ok: { type: boolean }
+        remoteKeys:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+        sinceRev: { type: integer }
+    SyncGetResponse:
+      type: object
+      properties:
+        value: { type: string }
+paths:
+  /api/embed:
+    post:
+      tags: [AI]
+      summary: 生成文本向量（Workers AI bge-base-en-v1.5）
+      operationId: embedText
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmbedRequest' }
+      responses:
+        '200':
+          description: 向量
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EmbedResponse' }
+        '400': { description: 参数错误, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: 未认证, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '500': { description: 服务端错误, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /api/search:
+    post:
+      tags: [AI]
+      summary: 生成查询向量（真实笔记匹配在客户端进行，因 E2E 加密）
+      operationId: searchNotes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SearchRequest' }
+      responses:
+        '200':
+          description: queryVector
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SearchResponse' }
+        '401': { description: 未认证, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '500': { description: 服务端错误, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /api/chat:
+    post:
+      tags: [AI]
+      summary: 基于笔记上下文的流式问答（Vercel AI data stream）
+      operationId: chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatRequest' }
+      responses:
+        '200':
+          description: 文本数据流（0:"..." 增量）；无 context 时诚实拒答
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '401': { description: 未认证, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '503': { description: 未配置 AI provider, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /api/capture:
+    post:
+      tags: [AI]
+      summary: 剪藏网页——服务端抓取并提取正文
+      operationId: captureWebpage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CaptureRequest' }
+      responses:
+        '200':
+          description: 提取的标题与正文
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CaptureResponse' }
+        '400': { description: 非法 URL, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '401': { description: 未认证, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '502': { description: 抓取失败, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /api/sync:
+    get:
+      tags: [Sync]
+      summary: 获取单条 delta 密文
+      operationId: getSyncDelta
+      parameters:
+        - name: key
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: delta 内容
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyncGetResponse' }
+        '403': { description: 跨用户读取被拒, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '404': { description: 未找到 }
+    post:
+      tags: [Sync]
+      summary: 列出当前用户的 delta keys（用于增量同步）
+      operationId: listSyncDelta
+      responses:
+        '200':
+          description: 远程 keys 列表
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SyncListResponse' }
+        '401': { description: 未认证 }
+    put:
+      tags: [Sync]
+      summary: 上传单条 delta 密文（按用户归属强校验）
+      operationId: putSyncDelta
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SyncPutBody' }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: { type: object, properties: { ok: { type: boolean } } }
+        '403': { description: 跨用户写入被拒 }
+        '409': { description: nonce 重放检测 }
+  /api/auth/start:
+    post:
+      tags: [Auth]
+      summary: 零信任登录——发起挑战（返回 challenge + salt）
+      operationId: authStart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthStartRequest' }
+      responses:
+        '200':
+          description: 挑战参数
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthStartResponse' }
+  /api/auth/verify:
+    post:
+      tags: [Auth]
+      summary: 零信任登录——提交证明，换取会话令牌
+      operationId: authVerify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuthVerifyRequest' }
+      responses:
+        '200':
+          description: 会话令牌
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthVerifyResponse' }
+        '401': { description: 证明无效 }
+  /api/agent:
+    post:
+      tags: [AI]
+      summary: 触发夜间整理 Agent（客户端执行，此处仅调度）
+      operationId: triggerAgent
+      responses:
+        '200':
+          description: 已调度
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  message: { type: string }

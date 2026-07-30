@@ -23,6 +23,7 @@
 | 收集箱 | 飞书分享捕获 → inbox 导入 | `src/lib/inbox/` |
 | 引用溯源 + 拒答 | 检索答案按来源编号 `[n]` 标注出处；无任何相关笔记时诚实拒答，绝不调用 LLM 编造 | `src/lib/ai/grounding.ts`、`src/app/recall/` |
 | 网页剪藏 | 服务端抓取 URL 提取正文落库（绕开浏览器 CORS） | `src/app/api/capture/`、`src/app/capture/` |
+| OpenAPI / MCP 开放 | 标准 OpenAPI 3.1 规范 + 可运行的 MCP stdio 服务器（capture/embed/ask/search 四工具），让 Claude Desktop、Cursor 等把本应用当「记忆后端」 | `openapi.yaml`、`src/mcp/` |
 
 ## 设计中 / 未实现 📋
 
@@ -62,6 +63,39 @@ npm run deploy
 - **零信任登录**：服务端只保存 `verifier = H(主密钥)`，无法反推主密钥。登录用挑战应答证明「你掌握主密钥」而非传递它；会话令牌按用户隔离，所有 KV 读写强校验归属，杜绝跨用户读写。
 - **SYNC_TOKEN 是遗留共享访问令牌**，只控制谁能调用 API，与笔记加密无关；单用户部署仍可用。
 - 历史提交曾泄漏 KV namespace id（非凭证，风险低）；介意者可重建 namespace，模板见 `wrangler.toml.example`。
+
+## OpenAPI 与 MCP（开放集成）
+
+项目提供两套开放接口，方便外部工具把 Mnemosyne 当作「记忆后端」来用：
+
+1. **OpenAPI 规范** [`openapi.yaml`](./openapi.yaml)——文档化全部 `/api/*` 端点、鉴权方式与**端到端加密边界**（服务端只见密文，真实笔记检索在客户端进行）。CI 中有测试校验规范完整性。
+2. **MCP stdio 服务器** [`src/mcp/`](./src/mcp/)——基于 `@modelcontextprotocol/sdk`，暴露 4 个工具：
+
+   | 工具 | 作用 |
+   |---|---|
+   | `mnemosyne_capture_webpage` | 剪藏网页：服务端抓取并提取正文，返回 `{ title, content, url, capturedAt }` |
+   | `mnemosyne_embed_text` | 为文本生成向量（Workers AI bge-base-en-v1.5，768 维） |
+   | `mnemosyne_ask` | 基于 `context` 中的笔记上下文问答，逐条 `[n]` 标出处；无上下文则诚实拒答 |
+   | `mnemosyne_search_notes` | 返回 `queryVector`；若设置本地导出文件，额外在导出的明文笔记上做**本机关键词检索** |
+
+### 运行 MCP 服务器
+
+```bash
+# 必需：访问令牌（SYNC_TOKEN 或零信任会话令牌）
+export MNEMOSYNE_TOKEN=<你的令牌>
+# 可选：部署地址（默认 http://localhost:3000）
+export MNEMOSYNE_BASE_URL=https://your-deployment.workers.dev
+# 可选：指向你「自己导出的明文 JSON」（见应用内导出），启用本地检索（数据不出本机）
+export MNEMOSYNE_NOTES_EXPORT=/path/to/mnemosyne-export.json
+
+npm run mcp
+```
+
+### 接入 Claude Desktop / Cursor
+
+在 MCP 客户端配置中注册一个 `stdio` 类型的 server，命令为 `npx tsx`（指向本项目 `src/mcp/server.ts`）或已安装的 `npm run mcp`，并传入上述环境变量即可。
+
+> **隐私边界**：因笔记为端到端加密、明文只在浏览器本地，MCP 服务器的 `search_notes` 默认只返回 `queryVector`（真实匹配在客户端）。要获得可检索的笔记结果，设置 `MNEMOSYNE_NOTES_EXPORT` 指向你本机导出的明文 JSON——这不会解密或上传任何云端数据。
 
 ## 技术栈
 

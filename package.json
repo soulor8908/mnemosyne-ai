@@ -16,10 +16,12 @@
     "build:worker": "opennextjs-cloudflare build",
     "predeploy": "node -e \"const fs=require('fs');const p='.open-next/server-functions/default/node_modules/onnxruntime-node';if(fs.existsSync(p)){fs.rmSync(p,{recursive:true,force:true});console.log('removed onnxruntime-node from server bundle')}\"",
     "deploy": "opennextjs-cloudflare build && npm run predeploy && wrangler deploy",
-    "preview": "opennextjs-cloudflare build && wrangler dev"
+    "preview": "opennextjs-cloudflare build && wrangler dev",
+    "mcp": "tsx src/mcp/server.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^0.0.66",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@xenova/transformers": "^2.17.2",
     "ai": "^3.4.0",
     "date-fns": "^4.4.0",
