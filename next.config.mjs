@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // OpenNext 需要 standalone 输出（否则 opennextjs-cloudflare build 找不到 pages-manifest.json）
+  output: 'standalone',
   reactStrictMode: true,
   experimental: {
     serverActions: {
