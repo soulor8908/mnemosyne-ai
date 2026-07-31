@@ -20,7 +20,7 @@
                        │ HTTPS（只传 verifier/密文/令牌）
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
-│            Cloudflare Workers + KV / Docker 自托管            │
+│            Cloudflare Pages + KV / Docker 自托管               │
 │                                                             │
 │  零信任认证 │ 加密同步 │ MCP Server │ RAGAS 评估 │ Agent       │
 │  ⚠️ 服务端从未持有 masterKey，无法解密任何笔记内容             │
@@ -84,7 +84,7 @@
 
 **AI**：Vercel AI SDK · Workers AI · @xenova/transformers · @modelcontextprotocol/sdk · ts-fsrs
 
-**后端**：Cloudflare Workers + KV + R2 · Python FastAPI（重排服务）
+**后端**：Cloudflare Pages + KV + R2 · Python FastAPI（重排服务）
 
 **工程**：Vitest（166 tests）· Playwright · ESLint · OpenAPI 3.1 · Docker Compose
 
@@ -92,12 +92,19 @@
 
 ### Cloudflare 部署
 
+> 部署到 **Cloudflare Pages**（`*.pages.dev`），而非 Workers（`*.workers.dev`）。
+> 原因：`workers.dev` 域名在国内访问极不稳定，`pages.dev` 国内可正常访问。
+
 ```bash
 npm install
-cp wrangler.toml.example wrangler.toml  # 填入 KV/R2/AI bindings
-npm run dev                               # 本地开发
-npm run deploy                            # 部署到 Workers
+cp wrangler.toml.example wrangler.toml    # 填入 KV/AI bindings
+wrangler pages project create mnemosyne --production-branch main  # 首次：创建 Pages 项目
+npm run dev                                # 本地开发
+npm run deploy                             # 构建并部署到 Pages
 ```
+
+> 备用：如需部署到 Workers（`*.workers.dev`），用 `npm run deploy:worker`。
+> 详见 [wrangler.toml.example](wrangler.toml.example) 头部说明。
 
 ### Docker 自托管
 
@@ -119,7 +126,7 @@ Claude Desktop 的 `claude_desktop_config.json`：
       "command": "npx",
       "args": ["tsx", "src/mcp/server.ts"],
       "env": {
-        "MNEMOSYNE_BASE_URL": "https://your-app.workers.dev",
+        "MNEMOSYNE_BASE_URL": "https://your-app.pages.dev",
         "MNEMOSYNE_TOKEN": "<会话令牌>"
       }
     }

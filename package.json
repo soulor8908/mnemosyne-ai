@@ -17,10 +17,12 @@
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
     "quality-gate": "npm run lint && npm run typecheck && npm test",
+    "build:pages": "opennextjs-cloudflare build && node scripts/prepare-pages.mjs",
+    "preview": "npm run build:pages && wrangler pages dev",
+    "deploy": "npm run build:pages && wrangler pages deploy .open-next",
     "build:worker": "opennextjs-cloudflare build",
-    "predeploy": "node -e \"const fs=require('fs');const p='.open-next/server-functions/default/node_modules/onnxruntime-node';if(fs.existsSync(p)){fs.rmSync(p,{recursive:true,force:true});console.log('removed onnxruntime-node from server bundle')}\"",
-    "deploy": "opennextjs-cloudflare build && npm run predeploy && wrangler deploy",
-    "preview": "opennextjs-cloudflare build && wrangler dev",
+    "preview:worker": "npm run build:worker && wrangler dev",
+    "deploy:worker": "npm run build:worker && node -e \"const fs=require('fs');const p='.open-next/server-functions/default/node_modules/onnxruntime-node';if(fs.existsSync(p)){fs.rmSync(p,{recursive:true,force:true});console.log('removed onnxruntime-node from server bundle')}\" && wrangler deploy",
     "mcp": "tsx src/mcp/server.ts"
   },
   "dependencies": {

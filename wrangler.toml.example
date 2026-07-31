@@ -1,21 +1,35 @@
-# Cloudflare Workers 配置模板（OpenNext adapter）
+# Cloudflare Pages 配置模板（OpenNext adapter + advanced mode）
+#
+# 为什么是 Pages 而不是 Workers？
+#   workers.dev 域名在国内访问极不稳定（移动网络下基本打不开），
+#   而 pages.dev 国内可正常访问。本项目主要面向国内用户，
+#   因此部署到 Pages 拿到 *.pages.dev 域名。
+#
+# 原理：
+#   OpenNext 官方只支持部署到 Workers，但 Pages 的 advanced mode（_worker.js）
+#   可以接受同样的 Module Worker。scripts/prepare-pages.mjs 会把 OpenNext 产物
+#   转换为 Pages 兼容格式（worker.js → _worker.js + assets 平铺 + _routes.json）。
+#
 # 使用方法：
 #   1. cp wrangler.toml.example wrangler.toml   （wrangler.toml 已 gitignore，不会被提交）
-#   2. 用 `wrangler kv namespace create <NAME>` 创建 6 个 KV namespace（KV / NOTES_DELTA / AUTH_USERS / AUTH_SESSIONS / AUTH_NONCES / AUTH_AUDIT），把真实 id 填进来
-#   3. `wrangler secret put SYNC_TOKEN` 设置 API 访问令牌（单用户/管理态；多用户用零信任登录则非必需）
-#   4. 部署：npm run deploy
+#   2. 用 `wrangler kv namespace create <NAME>` 创建 6 个 KV namespace
+#      （KV / NOTES_DELTA / AUTH_USERS / AUTH_SESSIONS / AUTH_NONCES / AUTH_AUDIT），把真实 id 填进来
+#   3. `wrangler pages project create mnemosyne --production-branch main` 创建 Pages 项目
+#   4. `wrangler secret put SYNC_TOKEN` 设置 API 访问令牌（单用户/管理态；多用户用零信任登录则非必需）
+#   5. 部署：npm run deploy
+#
+# Bindings 说明：
+#   Pages 支持与 Workers 相同的 KV / Workers AI bindings，配置方式一致。
+#   本项目未使用 Cron Triggers / Queues / Durable Objects（Pages 不支持的特性），
+#   因此 Pages 完全满足需求。
 #
 # 安全说明：历史版本曾把真实 KV namespace id 与 workers.dev 子域提交进仓库。
 # namespace id 本身不是凭证（无 API Token 无法访问），但属于不必要的信息暴露，
 # 已改为本模板 + 本地 wrangler.toml 的方式。若介意历史泄漏，可重建 KV namespace。
 name = "mnemosyne"
-main = ".open-next/worker.js"
+pages_build_output_dir = ".open-next"
 compatibility_date = "2024-12-30"
 compatibility_flags = ["nodejs_compat"]
-
-[assets]
-directory = ".open-next/assets"
-binding = "ASSETS"
 
 # 主数据 KV
 [[kv_namespaces]]
@@ -51,7 +65,7 @@ binding = "AI"
 
 [vars]
 AI_PROVIDER = "deepseek"
-APP_URL = "https://<your-worker>.<your-subdomain>.workers.dev"
+APP_URL = "https://<your-project>.pages.dev"
 
 # 密钥通过 `wrangler secret put <NAME>` 上传（本地开发写 .dev.vars）：
 # - SYNC_TOKEN        : API 访问令牌（必需，所有 /api/* 路由的 Bearer 鉴权）
