@@ -19,9 +19,10 @@ import {
   importFromJson,
   type ImportResult,
 } from '@/lib/markdown/export';
-import { getSyncToken } from '@/lib/api/client';
+import { getSyncToken, setSyncToken } from '@/lib/api/client';
 import { downloadBlob } from '@/lib/utils';
 import { Icon } from '@/components/ui/icon';
+import Link from 'next/link';
 import type { ReviewPreset } from '@/types';
 
 // 懒加载：HTML 导入（含 DOMParser + htmlToMarkdown walker）与飞书 inbox 导入
@@ -34,11 +35,6 @@ async function ingestInboxFilesLazy(files: File[]): Promise<ImportResult> {
   const { ingestInboxFiles } = await import('@/lib/inbox/ingest');
   return ingestInboxFiles(files);
 }
-// 懒加载：零信任登录仅在用户点击「用助记词登录」时才拉入 client-auth（→ crypto → BIP39 词表）。
-async function loginWithMnemonicLazy() {
-  const { loginWithMnemonic } = await import('@/lib/auth/client-auth');
-  return loginWithMnemonic();
-}
 
 export default function SettingsPage() {
   const [mnemonic, setMnemonicState] = useState<string>('');
@@ -46,8 +42,6 @@ export default function SettingsPage() {
   const [showMnemonic, setShowMnemonic] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [hasToken, setHasToken] = useState(false);
-  const [loginState, setLoginState] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle');
-  const [loginMsg, setLoginMsg] = useState('');
   const [byokProvider, setByokProvider] = useState<'deepseek' | 'glm' | 'openai'>('deepseek');
   const [byokApiKey, setByokApiKey] = useState('');
   const [byokSaved, setByokSaved] = useState<Record<string, boolean>>({});
@@ -127,19 +121,10 @@ export default function SettingsPage() {
     showToast(`${byokProvider} API Key 已加密保存`);
   }
 
-  async function handleLogin() {
-    setLoginState('loading');
-    setLoginMsg('');
-    try {
-      const { userId } = await loginWithMnemonicLazy();
-      setLoginState('ok');
-      setHasToken(true);
-      setLoginMsg(`已登录（用户 ${userId.slice(0, 8)}…）`);
-      showToast('登录成功，云端功能已开启');
-    } catch (err) {
-      setLoginState('error');
-      setLoginMsg((err as Error).message);
-    }
+  function handleLogout() {
+    setSyncToken('');
+    setHasToken(false);
+    showToast('已退出登录，云端同步已关闭');
   }
 
   async function handleExportJson() {
@@ -331,44 +316,32 @@ export default function SettingsPage() {
       <section className="mb-8">
         <h2 className="mb-3 text-lg font-medium text-ink-900">登录与云同步</h2>
         <div className="rounded-lg border border-ink-200 bg-white p-4">
-          <p className="mb-3 text-sm text-ink-600">
-            用你的钥匙登录后，笔记会加密同步到云端，多设备可访问。
-            <span className="font-medium text-ink-900">钥匙和助记词永远不会发送给服务器</span>。
-          </p>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <button
-              onClick={handleLogin}
-              disabled={loginState === 'loading'}
-              className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-hover disabled:opacity-50"
-            >
-              {loginState === 'loading' ? '登录中…' : '用钥匙登录'}
-            </button>
-            {loginState !== 'idle' && (
-              <span
-                className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs ${
-                  loginState === 'ok'
-                    ? 'bg-green-100 text-green-700'
-                    : loginState === 'error'
-                      ? 'bg-red-100 text-red-700'
-                      : 'bg-ink-100 text-ink-400'
-                }`}
+          {hasToken ? (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-green-500" />
+                <span className="text-sm text-ink-700">已登录，云端同步已开启</span>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="rounded-md border border-ink-200 px-3 py-1.5 text-sm text-ink-600 hover:bg-ink-50"
               >
-                <Icon
-                  name={loginState === 'ok' ? 'check' : loginState === 'error' ? 'close' : 'refresh'}
-                  size={12}
-                />
-                {loginState === 'ok' ? '已登录' : loginState === 'error' ? '失败' : '处理中'}
-              </span>
-            )}
-          </div>
-          {loginMsg && (
-            <p
-              className={`mt-2 text-xs ${
-                loginState === 'ok' ? 'text-green-700' : 'text-red-600'
-              }`}
-            >
-              {loginMsg}
-            </p>
+                退出登录
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-ink-300" />
+                <span className="text-sm text-ink-600">未登录，笔记仅存本地</span>
+              </div>
+              <Link
+                href="/login"
+                className="rounded-md bg-accent px-3 py-1.5 text-sm text-white hover:bg-accent-hover"
+              >
+                前往登录
+              </Link>
+            </div>
           )}
         </div>
       </section>

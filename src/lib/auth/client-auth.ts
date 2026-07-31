@@ -70,3 +70,19 @@ export async function loginWithMnemonic(): Promise<LoginResult> {
 export function hasStoredToken(): boolean {
   return getSyncToken().length > 0;
 }
+
+/**
+ * 自动重新登录：session 过期（API 返回 401）时，
+ * 若内存中仍有助记词（同一浏览器会话未关闭），自动走零信任登录刷新 session。
+ * @returns true=重登成功，false=无法重登（需用户手动输入助记词）
+ */
+export async function autoRelogin(): Promise<boolean> {
+  const mnemonic = getCachedMnemonic();
+  if (!mnemonic) return false;
+  try {
+    await loginWithMnemonic();
+    return true;
+  } catch {
+    return false;
+  }
+}

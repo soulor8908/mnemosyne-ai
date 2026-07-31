@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { countNotes } from '@/lib/db/notes';
 import { countPendingProposals } from '@/lib/db/proposals';
 import { getTodayReviewQueue } from '@/lib/fsrs/scheduler';
+import { getSyncToken } from '@/lib/api/client';
 import { Icon, type IconName } from '@/components/ui/icon';
 
 const NAV_ITEMS: Array<{ href: string; label: string; icon: IconName }> = [
@@ -28,6 +29,7 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   const [pendingProposals, setPendingProposals] = useState(0);
   const [reviewQueue, setReviewQueue] = useState(0);
   const [initialized, setInitialized] = useState(false);
+  const [hasToken, setHasToken] = useState(false);
 
   useEffect(() => {
     async function init() {
@@ -40,6 +42,7 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
         setNoteCount(nc);
         setPendingProposals(pp);
         setReviewQueue(rq.length);
+        setHasToken(!!getSyncToken());
         // 修复要点：旧实现在 Promise.all 之前就 setInitialized(true)，
         // 导致页脚短暂显示"笔记 0 条"，给用户"数据丢了"的错觉。
         setInitialized(true);
@@ -122,17 +125,25 @@ export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
         })}
       </nav>
 
-      <div className="border-t border-ink-200 px-4 py-3">
-        <div className="text-xs text-ink-400">
-          {initialized ? (
-            <>
-              <p>笔记 {noteCount} 条</p>
-              <p className="mt-1">本地优先 · 加密同步</p>
-            </>
-          ) : (
-            <p>初始化中…</p>
-          )}
+      <div className="border-t border-ink-200 px-3 py-3">
+        <div className="mb-1 px-1 text-xs text-ink-400">
+          {initialized ? `笔记 ${noteCount} 条` : '初始化中…'}
         </div>
+        <Link
+          href={hasToken ? '/settings' : '/login'}
+          className={`flex items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors ${
+            hasToken
+              ? 'text-ink-600 hover:bg-ink-50'
+              : 'text-accent hover:bg-accent/5'
+          }`}
+        >
+          <span
+            className={`h-2 w-2 shrink-0 rounded-full ${
+              hasToken ? 'bg-green-500' : 'bg-ink-300'
+            }`}
+          />
+          {hasToken ? '已同步' : '登录 / 同步'}
+        </Link>
       </div>
     </aside>
   );
